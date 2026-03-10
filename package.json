@@ -1,0 +1,7 @@
+{
+  "name": "relay-web",
+  "private": true,
+  "scripts": {
+    "vercel-build": "cd apps/platform && npm install && npm run build"
+  }
+}
