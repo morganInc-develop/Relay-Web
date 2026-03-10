@@ -1,0 +1,362 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum SubscriptionTier {
+  TIER1
+  TIER2
+  TIER3
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  PAST_DUE
+  TRIALING
+  INACTIVE
+}
+
+enum SiteStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum UserRole {
+  OWNER
+  MEMBER
+}
+
+enum AIActionType {
+  CONTENT_UPDATE
+  SEO_UPDATE
+  DESIGN_UPDATE
+  LAYOUT_UPDATE
+  COMPONENT_GENERATED
+  SEO_AUDIT
+  MONTHLY_REPORT
+}
+
+enum ChangeSource {
+  MANUAL
+  AI
+  SCHEDULED
+  SYSTEM
+}
+
+enum PublishStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  DISCARDED
+}
+
+// ─── USER & AUTH ──────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  subscription  Subscription?
+  ownedSites    Site[]           @relation("SiteOwner")
+  memberships   SiteMember[]
+  invitesSent   TeamInvite[]     @relation("InviteSender")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── SUBSCRIPTION & BILLING ───────────────────────────────────────────────────
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  tier                 SubscriptionTier
+  status               SubscriptionStatus @default(INACTIVE)
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  stripePriceId        String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// ─── SITES ────────────────────────────────────────────────────────────────────
+
+model Site {
+  id              String     @id @default(cuid())
+  ownerId         String
+  name            String
+  domain          String?    @unique
+  vercelProjectId String?
+  repoUrl         String?
+  payloadUrl      String?
+  neonDatabaseUrl String?
+  r2Prefix        String?    // Cloudflare R2 folder prefix for this client
+  status          SiteStatus @default(PENDING)
+  domainVerified  Boolean    @default(false)
+  verifyToken     String?    @unique
+  verifyTokenExp  DateTime?
+  whitelabelUrl   String?    // Tier 3 only — custom dashboard URL
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  owner            User              @relation("SiteOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members          SiteMember[]
+  invites          TeamInvite[]
+  contentFields    ContentField[]
+  versionSnapshots VersionSnapshot[]
+  scheduledChanges ScheduledChange[]
+  aiAuditLogs      AIAuditLog[]
+  seoAudits        SEOAudit[]
+  designTokens     DesignTokens?
+  componentLibrary ComponentLibrary?
+  aiUsage          AIUsage?
+
+  @@map("sites")
+}
+
+// ─── TEAM MEMBERS ─────────────────────────────────────────────────────────────
+
+model SiteMember {
+  id        String   @id @default(cuid())
+  siteId    String
+  userId    String
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, userId])
+  @@map("site_members")
+}
+
+model TeamInvite {
+  id        String   @id @default(cuid())
+  siteId    String
+  senderId  String
+  email     String
+  token     String   @unique @default(cuid())
+  role      UserRole @default(MEMBER)
+  accepted  Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  site   Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  sender User @relation("InviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("team_invites")
+}
+
+// ─── CONTENT ──────────────────────────────────────────────────────────────────
+
+model ContentField {
+  id        String   @id @default(cuid())
+  siteId    String
+  page      String   // e.g. "home", "about", "services"
+  field     String   // e.g. "hero.title", "hero.description"
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site             Site              @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  versionSnapshots VersionSnapshot[]
+
+  @@unique([siteId, page, field])
+  @@map("content_fields")
+}
+
+// ─── VERSION HISTORY & ROLLBACK ───────────────────────────────────────────────
+
+model VersionSnapshot {
+  id             String       @id @default(cuid())
+  siteId         String
+  contentFieldId String
+  page           String
+  field          String
+  previousValue  String       @db.Text
+  newValue       String       @db.Text
+  source         ChangeSource @default(MANUAL)
+  changedBy      String?      // userId
+  createdAt      DateTime     @default(now())
+
+  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  contentField ContentField @relation(fields: [contentFieldId], references: [id], onDelete: Cascade)
+
+  @@map("version_snapshots")
+}
+
+// ─── SCHEDULED PUBLISHING ─────────────────────────────────────────────────────
+
+model ScheduledChange {
+  id          String        @id @default(cuid())
+  siteId      String
+  page        String
+  field       String
+  newValue    String        @db.Text
+  publishAt   DateTime
+  status      PublishStatus @default(SCHEDULED)
+  publishedAt DateTime?
+  createdBy   String?       // userId
+  createdAt   DateTime      @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("scheduled_changes")
+}
+
+// ─── SEO ──────────────────────────────────────────────────────────────────────
+
+model SEOAudit {
+  id           String   @id @default(cuid())
+  siteId       String
+  page         String
+  keywords     String[] // target keywords
+  score        Int      // 0-100
+  results      Json     // full audit results per check
+  autoFixApplied Boolean @default(false)
+  createdAt    DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("seo_audits")
+}
+
+// ─── DESIGN TOKENS (TIER 2+) ──────────────────────────────────────────────────
+
+model DesignTokens {
+  id         String   @id @default(cuid())
+  siteId     String   @unique
+  colors     Json     // { primary, secondary, accent, background, text, gradients[] }
+  fonts      Json     // { heading, body } — from curated pairs
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("design_tokens")
+}
+
+// ─── COMPONENT LIBRARY (TIER 3) ───────────────────────────────────────────────
+
+model ComponentLibrary {
+  id         String      @id @default(cuid())
+  siteId     String      @unique
+  components Component[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("component_libraries")
+}
+
+model Component {
+  id          String   @id @default(cuid())
+  libraryId   String
+  name        String
+  description String?
+  code        String   @db.Text  // AI-generated React component code
+  props       Json?    // safe customizable props
+  approved    Boolean  @default(false) // passed Acorn static analysis
+  createdAt   DateTime @default(now())
+
+  library ComponentLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@map("components")
+}
+
+// ─── AI USAGE TRACKING ────────────────────────────────────────────────────────
+
+model AIUsage {
+  id            String   @id @default(cuid())
+  siteId        String   @unique
+  chatRequests  Int      @default(0) // resets monthly
+  seoAudits     Int      @default(0) // resets monthly
+  lastResetAt   DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("ai_usage")
+}
+
+model AIAuditLog {
+  id           String       @id @default(cuid())
+  siteId       String
+  actionType   AIActionType
+  prompt       String?      @db.Text  // what the user asked
+  routeCalled  String?      // which API route was triggered
+  beforeValue  String?      @db.Text
+  afterValue   String?      @db.Text
+  success      Boolean      @default(true)
+  errorMessage String?
+  createdAt    DateTime     @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("ai_audit_logs")
+}
