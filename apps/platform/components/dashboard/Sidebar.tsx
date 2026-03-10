@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -124,10 +125,12 @@ export default function Sidebar({
       <div className="border-t border-slate-200 px-4 py-4">
         <div className="mb-3 flex items-center gap-3 rounded-lg bg-slate-100 p-3">
           {userImage ? (
-            <img
+            <Image
               src={userImage}
               alt={`${userName} avatar`}
-              className="h-9 w-9 rounded-full object-cover"
+              width={36}
+              height={36}
+              className="rounded-full object-cover"
             />
           ) : (
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-300 text-sm font-semibold text-slate-700">

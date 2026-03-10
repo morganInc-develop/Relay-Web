@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -9,13 +10,17 @@ const errorMessages: Record<string, string> = {
   AccessDenied: "You do not have permission to sign in",
 };
 
-export default function AuthErrorPage() {
+function ErrorMessage() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error") ?? "";
   const message =
     errorMessages[error] ??
     "An error occurred during sign in. Please try again.";
 
+  return <p className="mt-3 text-sm text-slate-600">{message}</p>;
+}
+
+export default function AuthErrorPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -26,7 +31,9 @@ export default function AuthErrorPage() {
           <h1 className="mt-6 text-2xl font-semibold text-slate-900">
             Sign-in Error
           </h1>
-          <p className="mt-3 text-sm text-slate-600">{message}</p>
+          <Suspense fallback={<p className="mt-3 text-sm text-slate-600">Loading...</p>}>
+            <ErrorMessage />
+          </Suspense>
         </div>
 
         <Link
