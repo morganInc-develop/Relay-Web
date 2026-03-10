@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "NEXT_IGNORE_INCORRECT_LOCKFILE=1 next dev",
+    "build": "NEXT_IGNORE_INCORRECT_LOCKFILE=1 next build",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "postinstall": "npm run prisma:generate",
     "start": "next start",
     "lint": "eslint"
   },

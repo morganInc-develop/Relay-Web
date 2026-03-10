@@ -2,6 +2,6 @@
   "name": "relay-web",
   "private": true,
   "scripts": {
-    "vercel-build": "cd apps/platform && npm install && npm run build"
+    "vercel-build": "npm --prefix apps/platform install && npm --prefix apps/platform run prisma:generate && rm -rf node_modules && ln -s apps/platform/node_modules node_modules && npm --prefix apps/platform run build"
   }
 }
