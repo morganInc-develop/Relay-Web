@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
@@ -50,21 +49,22 @@ const pricingTiers = [
 ];
 
 export default async function OnboardingPage() {
+  console.log("[onboarding] rendering page, calling auth()");
   const session = await auth();
+  console.log("[onboarding] auth() result — userId:", session?.user?.id ?? "none (guest)");
 
-  if (!session?.user?.id) {
-    redirect("/auth/signin");
-  }
-
-  const name = session.user.name ?? session.user.email ?? "there";
+  const name = session?.user?.name ?? session?.user?.email ?? null;
+  console.log("[onboarding] rendering pricing — user:", name ?? "guest");
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-10 md:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8 text-center md:mb-12">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Welcome, {name}
-          </p>
+          {name ? (
+            <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              Welcome, {name}
+            </p>
+          ) : null}
           <h1 className="mt-2 text-3xl font-semibold text-slate-900 md:text-4xl">
             Choose your plan to get started
           </h1>

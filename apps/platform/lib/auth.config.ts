@@ -11,6 +11,8 @@ const authConfig = {
   pages: {
     signIn: "/auth/signin",
   },
+  // Required in NextAuth v5 beta to trust the host in dev/proxy environments
+  trustHost: true,
 } satisfies NextAuthConfig;
 
 export default authConfig;

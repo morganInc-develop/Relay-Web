@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 function GoogleLogo() {
   return (
@@ -53,25 +53,31 @@ function Spinner() {
   );
 }
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
 
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+
   useEffect(() => {
+    console.log("[signin] session status changed:", status);
     if (status === "authenticated") {
-      router.replace("/dashboard");
+      console.log("[signin] already authenticated, redirecting to", callbackUrl);
+      router.replace(callbackUrl);
     }
-  }, [router, status]);
+  }, [router, status, callbackUrl]);
 
   const handleGoogleSignIn = async () => {
     if (isLoading) return;
 
+    console.log("[signin] Google sign-in initiated, callbackUrl:", callbackUrl);
     setIsLoading(true);
     try {
-      await signIn("google");
+      await signIn("google", { callbackUrl });
     } catch (error) {
-      console.error("[auth] Google sign-in failed", error);
+      console.error("[signin] Google sign-in failed", error);
       setIsLoading(false);
     }
   };
@@ -108,5 +114,19 @@ export default function SignInPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-100">
+          <Spinner />
+        </div>
+      }
+    >
+      <SignInForm />
+    </Suspense>
   );
 }

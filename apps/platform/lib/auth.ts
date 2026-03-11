@@ -1,11 +1,8 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { SubscriptionStatus } from "@prisma/client";
-import NextAuth, { type Session } from "next-auth";
+import NextAuth from "next-auth";
 
 import authConfig from "@/lib/auth.config";
 import { prisma } from "@/lib/prisma";
-
-let getSession: (() => Promise<Session | null>) | null = null;
 
 const nextAuth = NextAuth({
   ...authConfig,
@@ -15,10 +12,14 @@ const nextAuth = NextAuth({
   },
   callbacks: {
     async session({ session, user }) {
+      console.log("[auth] session callback — userId:", user.id);
+
       const subscription = await prisma.subscription.findUnique({
         where: { userId: user.id },
         select: { tier: true },
       });
+
+      console.log("[auth] session subscription:", subscription);
 
       session.user.id = user.id;
       session.user.email = user.email;
@@ -26,40 +27,33 @@ const nextAuth = NextAuth({
 
       return session;
     },
-    async signIn() {
+    async signIn({ user }) {
+      console.log("[auth] signIn callback — userId:", user.id, "email:", user.email);
       return true;
     },
     async redirect({ url, baseUrl }) {
-      const redirectUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
+      console.log("[auth] redirect callback — url:", url, "baseUrl:", baseUrl);
 
+      // Block cross-origin redirects
+      const redirectUrl = url.startsWith("/") ? `${baseUrl}${url}` : url;
       try {
         const targetUrl = new URL(redirectUrl);
         const rootUrl = new URL(baseUrl);
 
         if (targetUrl.origin !== rootUrl.origin) {
+          console.log("[auth] redirect: cross-origin blocked, returning baseUrl");
           return baseUrl;
         }
 
+        // After OAuth the callback route itself isn't a useful landing page —
+        // send the user to /dashboard and let the layout handle subscription routing.
         if (targetUrl.pathname.startsWith("/api/auth")) {
-          return targetUrl.toString();
-        }
-
-        const session = getSession ? await getSession() : null;
-
-        if (!session?.user?.id) {
-          return targetUrl.toString();
-        }
-
-        const subscription = await prisma.subscription.findUnique({
-          where: { userId: session.user.id },
-          select: { status: true },
-        });
-
-        if (subscription?.status === SubscriptionStatus.ACTIVE) {
+          console.log("[auth] redirect: auth API path, defaulting to /dashboard");
           return `${baseUrl}/dashboard`;
         }
 
-        return `${baseUrl}/onboarding`;
+        console.log("[auth] redirect: honoring callbackUrl", targetUrl.toString());
+        return targetUrl.toString();
       } catch (error) {
         console.error("[auth] redirect callback failed", error);
         return baseUrl;
@@ -77,5 +71,3 @@ const nextAuth = NextAuth({
 });
 
 export const { handlers, auth, signIn, signOut } = nextAuth;
-
-getSession = auth;
