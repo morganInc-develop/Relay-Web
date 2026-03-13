@@ -96,7 +96,10 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           })
-          if (!res.ok) throw new Error("Save failed")
+          if (!res.ok) {
+            if (res.status !== 429) setSaveStatus("error")
+            return
+          }
         } else {
           const res = await fetch("/api/content/update-text", {
             method: "PATCH",
@@ -110,7 +113,10 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
               newValue,
             }),
           })
-          if (!res.ok) throw new Error("Save failed")
+          if (!res.ok) {
+            if (res.status !== 429) setSaveStatus("error")
+            return
+          }
         }
       }
       setSaveStatus("saved")

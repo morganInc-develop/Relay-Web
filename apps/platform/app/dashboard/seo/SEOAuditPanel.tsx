@@ -72,7 +72,10 @@ export default function SEOAuditPanel({
         body: JSON.stringify({ siteId, pageSlug, keywords: keywordList }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? "Audit failed")
+      if (!res.ok) {
+        if (res.status !== 429) setError(data.error ?? "Audit failed")
+        return
+      }
       setResults(data.results)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Audit failed")

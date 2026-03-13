@@ -36,10 +36,10 @@ export const rateLimiters = {
     prefix: "rl:domain",
   }),
 
-  // Auth attempts — 10 per 15 minutes per IP
+  // Auth attempts — 5 per 15 minutes per IP
   auth: new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(10, "15 m"),
+    limiter: Ratelimit.slidingWindow(5, "15 m"),
     prefix: "rl:auth",
   }),
 

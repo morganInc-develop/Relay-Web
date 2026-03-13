@@ -72,14 +72,16 @@ export default function AIChatInterface({
       const data = await res.json()
 
       if (!res.ok) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: data.error ?? "Something went wrong. Please try again.",
-          },
-        ])
+        if (res.status !== 429) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: data.error ?? "Something went wrong. Please try again.",
+            },
+          ])
+        }
         return
       }
 
