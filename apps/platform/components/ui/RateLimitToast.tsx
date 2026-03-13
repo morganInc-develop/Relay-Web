@@ -39,19 +39,17 @@ function getLimiterMessage(hint?: string): string {
 
 function SingleToast({
   id,
-  message,
   resetAt,
   limiterHint,
 }: {
   id: string
-  message: string
   resetAt: Date
   limiterHint?: string
 }) {
   const { dismissError } = useRateLimit()
   const [timeRemaining, setTimeRemaining] = useState(() => formatTimeRemaining(resetAt))
   const [isLeaving, setIsLeaving] = useState(false)
-  const isExpired = resetAt.getTime() <= Date.now()
+  const isExpired = timeRemaining === "Resetting now..."
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -133,7 +131,6 @@ export default function RateLimitToast() {
         <div key={error.id} className="pointer-events-auto">
           <SingleToast
             id={error.id}
-            message={error.message}
             resetAt={error.resetAt}
             limiterHint={error.limiterHint}
           />
