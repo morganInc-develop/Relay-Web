@@ -1,5 +1,13 @@
 name: Deploy Platform
 
+# DEPLOYMENT NOTE:
+# The RelayWeb platform app (apps/platform) is deployed via Vercel's native
+# GitHub integration — Vercel auto-deploys on every push to main automatically.
+# This workflow handles CI validation only (TypeScript check).
+# If Vercel auto-deploy is ever disabled, add a deploy hook step here using:
+#   secrets.VERCEL_PLATFORM_DEPLOY_HOOK_URL
+# and create that hook at: Vercel Dashboard → Project → Settings → Git → Deploy Hooks
+
 on:
   push:
     branches:
@@ -10,7 +18,7 @@ on:
 
 jobs:
   typecheck:
-    name: TypeScript Check
+    name: TypeScript Check — Platform
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -33,6 +41,8 @@ jobs:
         working-directory: apps/platform
         run: npx tsc --noEmit
 
-      - name: Report result
+      - name: Confirm deployment method
         if: success()
-        run: echo "Platform TypeScript check passed"
+        run: |
+          echo "TypeScript check passed at $(date -u)"
+          echo "Platform deployment: handled by Vercel GitHub integration (auto-deploy on push to main)"
