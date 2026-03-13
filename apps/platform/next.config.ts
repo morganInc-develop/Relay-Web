@@ -1,5 +1,6 @@
-import type { NextConfig } from "next";
-import path from "path";
+import { withSentryConfig } from "@sentry/nextjs"
+import type { NextConfig } from "next"
+import path from "path"
 
 const nextConfig: NextConfig = {
   // On Vercel the build runs from apps/platform/ but Vercel looks for
@@ -16,6 +17,21 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-};
+}
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Sentry organization and project — update these with your actual values
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+
+  // Only upload source maps in production CI
+  silent: !process.env.CI,
+
+  // Disable source map upload during local development
+  sourcemaps: {
+    disable: process.env.NODE_ENV !== "production",
+  },
+
+  // Automatically tree-shake Sentry logger statements
+  disableLogger: true,
+})

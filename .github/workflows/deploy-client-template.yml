@@ -1,0 +1,44 @@
+name: Deploy Client Template
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/client-template/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deploy'
+        required: false
+        default: 'Manual trigger'
+
+jobs:
+  deploy:
+    name: Trigger Vercel Rebuild
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Trigger Vercel deploy hook
+        run: |
+          echo "Triggering Vercel rebuild for client-template..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}")
+          echo "Vercel API response code: $RESPONSE"
+          if [ "$RESPONSE" != "201" ]; then
+            echo "ERROR: Vercel deploy hook returned $RESPONSE — expected 201"
+            exit 1
+          fi
+          echo "Rebuild triggered successfully"
+
+      - name: Notify success
+        if: success()
+        run: echo "Client template deploy triggered at $(date -u)"
+
+      - name: Notify failure
+        if: failure()
+        run: echo "Deploy trigger FAILED at $(date -u)"

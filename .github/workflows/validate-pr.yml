@@ -1,0 +1,55 @@
+name: Validate Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-platform:
+    name: Validate Platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/platform/package-lock.json
+
+      - name: Install platform dependencies
+        working-directory: apps/platform
+        run: npm ci
+
+      - name: TypeScript check — platform
+        working-directory: apps/platform
+        run: npx tsc --noEmit
+
+  validate-client-template:
+    name: Validate Client Template
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/client-template/package-lock.json
+
+      - name: Install client template dependencies
+        working-directory: apps/client-template
+        run: npm ci
+
+      - name: TypeScript check — client template
+        working-directory: apps/client-template
+        run: npx tsc --noEmit

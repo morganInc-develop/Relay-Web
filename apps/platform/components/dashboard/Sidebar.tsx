@@ -5,8 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart,
+  Bot,
   Blocks,
   FileText,
+  Globe,
   LayoutDashboard,
   Palette,
   Search,
@@ -57,6 +59,12 @@ export default function Sidebar({
       show: true,
     },
     {
+      href: "/dashboard/site",
+      label: "My Site",
+      icon: Globe,
+      show: true,
+    },
+    {
       label: "Content",
       icon: FileText,
       href: "/dashboard/content",
@@ -66,6 +74,12 @@ export default function Sidebar({
       label: "SEO",
       icon: Search,
       href: "/dashboard/seo",
+      show: true,
+    },
+    {
+      label: "AI",
+      icon: Bot,
+      href: "/dashboard/ai",
       show: true,
     },
     {

@@ -77,6 +77,7 @@ model User {
   ownedSites    Site[]           @relation("SiteOwner")
   memberships   SiteMember[]
   invitesSent   TeamInvite[]     @relation("InviteSender")
+  aiAuditLogs   AIAuditLog[]
 
   @@map("users")
 }
@@ -147,7 +148,7 @@ model Subscription {
 model Site {
   id              String     @id @default(cuid())
   ownerId         String
-  name            String
+  name            String?
   domain          String?    @unique
   vercelProjectId String?
   repoUrl         String?
@@ -156,6 +157,7 @@ model Site {
   r2Prefix        String?    // Cloudflare R2 folder prefix for this client
   status          SiteStatus @default(PENDING)
   domainVerified  Boolean    @default(false)
+  verifiedAt      DateTime?
   verifyToken     String?    @unique
   verifyTokenExp  DateTime?
   whitelabelUrl   String?    // Tier 3 only — custom dashboard URL
@@ -171,7 +173,7 @@ model Site {
   scheduledChanges ScheduledChange[]
   aiAuditLogs      AIAuditLog[]
   seoAudits        SEOAudit[]
-  designTokens     DesignTokens?
+  designToken      DesignToken?
   componentLibrary ComponentLibrary?
   aiUsage          AIUsage?
 
@@ -232,19 +234,23 @@ model ContentField {
 // ─── VERSION HISTORY & ROLLBACK ───────────────────────────────────────────────
 
 model VersionSnapshot {
-  id             String       @id @default(cuid())
-  siteId         String
-  contentFieldId String
-  page           String
-  field          String
-  previousValue  String       @db.Text
-  newValue       String       @db.Text
-  source         ChangeSource @default(MANUAL)
-  changedBy      String?      // userId
-  createdAt      DateTime     @default(now())
+  id            String       @id @default(cuid())
+  siteId        String
+  pageSlug      String
+  fieldKey      String
+  previousValue String       @db.Text
+  newValue      String       @db.Text
+  changedBy     String
+  source        ChangeSource
+  createdAt     DateTime     @default(now())
 
-  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  contentField ContentField @relation(fields: [contentFieldId], references: [id], onDelete: Cascade)
+  // Compatibility fields for existing history/linkage code paths.
+  contentFieldId String?
+  page           String       @default("")
+  field          String       @default("")
+
+  site         Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  contentField ContentField? @relation(fields: [contentFieldId], references: [id], onDelete: SetNull)
 
   @@map("version_snapshots")
 }
@@ -287,7 +293,7 @@ model SEOAudit {
 
 // ─── DESIGN TOKENS (TIER 2+) ──────────────────────────────────────────────────
 
-model DesignTokens {
+model DesignToken {
   id         String   @id @default(cuid())
   siteId     String   @unique
   colors     Json     // { primary, secondary, accent, background, text, gradients[] }
@@ -345,18 +351,30 @@ model AIUsage {
 }
 
 model AIAuditLog {
-  id           String       @id @default(cuid())
-  siteId       String
-  actionType   AIActionType
-  prompt       String?      @db.Text  // what the user asked
-  routeCalled  String?      // which API route was triggered
-  beforeValue  String?      @db.Text
-  afterValue   String?      @db.Text
-  success      Boolean      @default(true)
-  errorMessage String?
-  createdAt    DateTime     @default(now())
+  id            String       @id @default(cuid())
+  siteId        String
+  site          Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actionType    AIActionType
+  pageSlug      String?
+  fieldKey      String?
+  previousValue String?      @db.Text
+  newValue      String?      @db.Text
+  userPrompt    String?      @db.Text
+  aiResponse    String?      @db.Text
+  wasApplied    Boolean      @default(false)
+  wasRejected   Boolean      @default(false)
+  source        ChangeSource @default(AI)
+  createdAt     DateTime     @default(now())
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  // Compatibility fields for existing audit logging flow.
+  prompt       String?  @db.Text
+  routeCalled  String?
+  beforeValue  String?  @db.Text
+  afterValue   String?  @db.Text
+  success      Boolean  @default(true)
+  errorMessage String?
 
   @@map("ai_audit_logs")
 }

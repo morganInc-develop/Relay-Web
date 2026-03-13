@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 
@@ -49,8 +50,10 @@ const pricingTiers = [
 ];
 
 export default async function OnboardingPage() {
+  const session = await auth()
+  if (!session?.user?.id) redirect("/auth/signin")
+
   console.log("[onboarding] rendering page, calling auth()");
-  const session = await auth();
   console.log("[onboarding] auth() result — userId:", session?.user?.id ?? "none (guest)");
 
   const name = session?.user?.name ?? session?.user?.email ?? null;

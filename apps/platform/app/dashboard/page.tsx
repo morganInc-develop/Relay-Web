@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SubscriptionStatus, type SubscriptionTier } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { Globe } from "lucide-react";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -179,19 +180,19 @@ export default async function DashboardPage() {
       </section>
 
       {!site ? (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">Connect your site</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Your dashboard is ready. Connect your first website to unlock content,
-            SEO, analytics, and AI actions.
+        <div className="bg-gray-50 border border-gray-200 border-dashed rounded-xl p-8 text-center">
+          <Globe className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <h3 className="font-semibold text-gray-700 mb-1">Connect your site</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Verify your domain and link your site to start editing content.
           </p>
-          <Link
-            href="/settings"
-            className="mt-6 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+          <a
+            href="/dashboard/site"
+            className="inline-block bg-gray-900 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 transition-colors"
           >
-            Connect your site
-          </Link>
-        </section>
+            Connect site →
+          </a>
+        </div>
       ) : (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
