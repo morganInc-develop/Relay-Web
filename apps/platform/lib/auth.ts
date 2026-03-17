@@ -15,10 +15,18 @@ console.log("[auth:init] GOOGLE_CLIENT_SECRET present:", !!process.env.GOOGLE_CL
 console.log("[auth:init] DATABASE_URL present:", !!process.env.DATABASE_URL);
 console.log("[auth:init] DATABASE_URL has pooler:", process.env.DATABASE_URL?.includes("-pooler") ?? false);
 
+// Log the exact DATABASE_URL format (masked) for debugging
+const dbUrl = process.env.DATABASE_URL ?? "";
+console.log("[auth:init] DATABASE_URL host:", dbUrl ? new URL(dbUrl).host : "(not set)");
+console.log("[auth:init] DIRECT_URL present:", !!process.env.DIRECT_URL);
+
 // Test Prisma can reach the database before handing it to the adapter
 prisma.$connect()
   .then(() => console.log("[auth:init] Prisma connected to database successfully"))
-  .catch((err: unknown) => console.error("[auth:init] Prisma failed to connect:", err));
+  .catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[auth:init] Prisma failed to connect — message:", message);
+  });
 
 const nextAuth = NextAuth({
   ...authConfig,

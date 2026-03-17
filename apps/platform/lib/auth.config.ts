@@ -10,6 +10,7 @@ const authConfig = {
   ],
   pages: {
     signIn: "/auth/signin",
+    error: "/auth/error",
   },
   // Required in NextAuth v5 beta to trust the host in dev/proxy environments
   trustHost: true,
