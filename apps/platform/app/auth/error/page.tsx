@@ -22,10 +22,11 @@ function ErrorDetails() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error") ?? "";
   const message = errorMessages[error] ?? "An error occurred during sign in. Please try again.";
-  const [currentUrl, setCurrentUrl] = useState("");
+  const [currentUrl] = useState(() =>
+    typeof window !== "undefined" ? window.location.href : ""
+  );
 
   useEffect(() => {
-    setCurrentUrl(window.location.href);
     console.error("[auth:error] page rendered");
     console.error("[auth:error] error code:", error || "none");
     console.error("[auth:error] full URL:", window.location.href);

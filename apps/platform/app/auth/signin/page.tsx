@@ -58,14 +58,14 @@ function SignInForm() {
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUrl, setCurrentUrl] = useState("");
+  const [currentUrl] = useState(() =>
+    typeof window !== "undefined" ? window.location.href : ""
+  );
 
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
   const errorParam = searchParams.get("error");
 
   useEffect(() => {
-    setCurrentUrl(window.location.href);
-
     console.log("[signin] page mounted");
     console.log("[signin] callbackUrl:", callbackUrl);
     console.log("[signin] error param:", errorParam ?? "none");
