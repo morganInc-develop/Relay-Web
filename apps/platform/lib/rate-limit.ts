@@ -12,7 +12,7 @@ export const rateLimiters = {
   contentUpdate: new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(30, "1 h"),
-    prefix: "rl:content",
+    prefix: "relayweb:content",
   }),
 
   // AI chatbot — Tier 1: 5 per day

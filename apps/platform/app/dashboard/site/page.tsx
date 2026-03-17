@@ -1,9 +1,8 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
-import { buildVerifyMetaTag } from "@/lib/domain-verification"
-import DomainVerificationClient from "./DomainVerificationClient"
-import SiteLinkingClient from "./SiteLinkingClient"
+import DomainVerification from "@/components/domain/DomainVerification"
+import SiteLinking from "@/components/site/SiteLinking"
 import { CheckCircle } from "lucide-react"
 
 export default async function SitePage() {
@@ -31,8 +30,6 @@ export default async function SitePage() {
       status: true,
     },
   })
-
-  const metaTag = site?.verifyToken ? buildVerifyMetaTag(site.verifyToken) : null
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10 space-y-10">
@@ -78,11 +75,7 @@ export default async function SitePage() {
             </span>
           </div>
         ) : (
-          <DomainVerificationClient
-            initialDomain={site?.domain ?? ""}
-            initialToken={site?.verifyToken ?? ""}
-            initialMetaTag={metaTag ?? ""}
-          />
+          <DomainVerification />
         )}
       </div>
 
@@ -121,11 +114,7 @@ export default async function SitePage() {
             Complete domain verification above to unlock this step.
           </p>
         ) : (
-          <SiteLinkingClient
-            initialRepoUrl={site?.repoUrl ?? ""}
-            initialPayloadUrl={site?.payloadUrl ?? ""}
-            initialVercelProjectId={site?.vercelProjectId ?? ""}
-          />
+          <SiteLinking />
         )}
       </div>
 

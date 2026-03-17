@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
-import { SubscriptionStatus } from "@prisma/client"
-import SEOAuditPanel from "./SEOAuditPanel"
+import { SubscriptionStatus, SubscriptionTier } from "@prisma/client"
+import SeoAudit from "@/components/seo/SeoAudit"
 
 export default async function SEOPage() {
   const session = await auth()
@@ -21,21 +21,13 @@ export default async function SEOPage() {
     orderBy: { createdAt: "desc" },
   })
 
-  const recentAudits = site
-    ? await prisma.sEOAudit.findMany({
-        where: { siteId: site.id },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-      })
-    : []
-
   const tierLimits = {
-    TIER1: { audits: 5, keywords: 3 },
-    TIER2: { audits: 20, keywords: 10 },
-    TIER3: { audits: null, keywords: null },
+    [SubscriptionTier.TIER1]: { audits: 5, keywords: 3, canAutoFix: false },
+    [SubscriptionTier.TIER2]: { audits: 20, keywords: 10, canAutoFix: true },
+    [SubscriptionTier.TIER3]: { audits: null, keywords: 999, canAutoFix: true },
   }
 
-  const limits = tierLimits[subscription.tier] ?? tierLimits.TIER1
+  const limits = tierLimits[subscription.tier] ?? tierLimits[SubscriptionTier.TIER1]
 
   return (
     <div className="p-8">
@@ -52,16 +44,7 @@ export default async function SEOPage() {
           <p className="text-amber-800 font-medium">No site connected yet</p>
         </div>
       ) : (
-        <SEOAuditPanel
-          siteId={site.id}
-          maxKeywords={limits.keywords ?? 999}
-          recentAudits={recentAudits.map((audit) => ({
-            id: audit.id,
-            pageSlug: audit.page,
-            overallScore: audit.score,
-            createdAt: audit.createdAt,
-          }))}
-        />
+        <SeoAudit maxKeywords={limits.keywords} canAutoFix={limits.canAutoFix} />
       )}
     </div>
   )

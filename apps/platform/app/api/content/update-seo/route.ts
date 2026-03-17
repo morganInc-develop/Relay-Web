@@ -1,41 +1,38 @@
 import { auth } from "@/lib/auth"
-import { NextRequest, NextResponse } from "next/server"
 import {
-  getSiteForUser,
-  getUserSubscription,
-  tierAllows,
-  tierNotAllowedResponse,
-} from "@/lib/site-access"
-import { updatePageInPayload } from "@/lib/payload-client"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
+  applySeoFieldUpdate,
+  ContentMutationError,
+  SeoField,
+} from "@/lib/content-mutations"
+import { prisma } from "@/lib/prisma"
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
-import { triggerClientRebuild } from "@/lib/triggerClientRebuild"
-import { ChangeSource, SubscriptionStatus, SubscriptionTier } from "@prisma/client"
+import { getUserSubscription } from "@/lib/site-access"
+import { SubscriptionStatus } from "@prisma/client"
+import { NextRequest, NextResponse } from "next/server"
 
 interface UpdateSeoBody {
-  siteId: string
-  pageId: string
-  pageSlug: string
-  metaTitle?: string
-  metaDescription?: string
-  ogImage?: string
-  noIndex?: boolean
-  previousValues: {
-    metaTitle?: string
-    metaDescription?: string
-    ogImage?: string
-    noIndex?: boolean
-  }
+  page: string
+  field: SeoField
+  value: string
 }
 
+const allowedFields = new Set<SeoField>([
+  "metaTitle",
+  "metaDescription",
+  "ogTitle",
+  "ogDescription",
+  "ogImage",
+])
+
 export async function PATCH(req: NextRequest) {
-  // 1. Auth check
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Parse body
+  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
+  if (!rateLimit.success) return rateLimit.response!
+
   let body: UpdateSeoBody
   try {
     body = await req.json()
@@ -43,85 +40,47 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { siteId, pageId, pageSlug, metaTitle, metaDescription, ogImage, noIndex, previousValues } = body
-
-  if (!siteId || !pageId || !pageSlug) {
-    return NextResponse.json({ error: "siteId, pageId, and pageSlug are required" }, { status: 400 })
+  const { page, field, value } = body
+  if (!page || !field || value === undefined) {
+    return NextResponse.json({ error: "page, field, and value are required" }, { status: 400 })
+  }
+  if (!allowedFields.has(field)) {
+    return NextResponse.json({ error: "Invalid SEO field" }, { status: 400 })
   }
 
-  // 2. Site ownership check
-  const { site, response: accessError } = await getSiteForUser(siteId, session.user.id)
-  if (accessError) return accessError
+  const site = await prisma.site.findFirst({
+    where: { ownerId: session.user.id },
+    orderBy: { createdAt: "desc" },
+  })
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  if (!site.domainVerified || !site.linked) {
+    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+  }
 
-  // 3. Tier check
   const subscription = await getUserSubscription(session.user.id)
   if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
     return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
   }
-  if (!tierAllows(subscription.tier, SubscriptionTier.TIER1)) {
-    return tierNotAllowedResponse("SEO editing")
-  }
 
-  // 4. Rate limit check
-  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
-  if (!rateLimit.success) return rateLimit.response!
+  try {
+    const result = await applySeoFieldUpdate({
+      site,
+      page,
+      field,
+      value,
+      userId: session.user.id,
+      subscriptionTier: subscription.tier,
+    })
 
-  const maxVersions = getMaxVersions(subscription.tier)
-
-  // Save version snapshot for each changed SEO field
-  const seoFields: Record<string, { prev: string; next: string }> = {}
-  if (metaTitle !== undefined)
-    seoFields["meta.title"] = { prev: previousValues.metaTitle ?? "", next: metaTitle }
-  if (metaDescription !== undefined)
-    seoFields["meta.description"] = { prev: previousValues.metaDescription ?? "", next: metaDescription }
-  if (ogImage !== undefined)
-    seoFields["meta.ogImage"] = { prev: previousValues.ogImage ?? "", next: ogImage }
-  if (noIndex !== undefined)
-    seoFields["meta.noIndex"] = {
-      prev: String(previousValues.noIndex ?? false),
-      next: String(noIndex),
+    return NextResponse.json({
+      success: true,
+      versionsRemaining: result.versionsRemaining,
+    })
+  } catch (error) {
+    if (error instanceof ContentMutationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
     }
-
-  for (const [fieldKey, { prev, next }] of Object.entries(seoFields)) {
-    await createVersionSnapshot({
-      siteId,
-      pageSlug,
-      fieldKey,
-      previousValue: prev,
-      newValue: next,
-      changedBy: session.user.id,
-      source: ChangeSource.MANUAL,
-      maxVersions,
-    })
+    console.error("[Content] SEO update failed:", error)
+    return NextResponse.json({ error: "Failed to update SEO field" }, { status: 500 })
   }
-
-  // Update SEO in Payload
-  const updateData: Record<string, unknown> = { meta: {} }
-  if (metaTitle !== undefined) (updateData.meta as Record<string, unknown>).title = metaTitle
-  if (metaDescription !== undefined) (updateData.meta as Record<string, unknown>).description = metaDescription
-  if (ogImage !== undefined) (updateData.meta as Record<string, unknown>).ogImage = ogImage
-  if (noIndex !== undefined) (updateData.meta as Record<string, unknown>).noIndex = noIndex
-
-  const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
-    site,
-    pageId,
-    updateData
-  )
-  if (payloadError) {
-    return NextResponse.json({ error: payloadError }, { status: payloadStatus })
-  }
-
-  // Trigger rebuild
-  if (site.payloadUrl) {
-    await triggerClientRebuild({
-      siteRebuildUrl: site.payloadUrl,
-      webhookSecret: process.env.RELAYWEB_CLIENT_WEBHOOK_SECRET ?? "",
-      source: "platform-seo-update",
-      pageSlug,
-      triggeredBy: session.user.id,
-    })
-  }
-
-  return NextResponse.json({ success: true, updated: Object.keys(seoFields) })
 }

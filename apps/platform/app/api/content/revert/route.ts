@@ -1,22 +1,15 @@
 import { auth } from "@/lib/auth"
-import { NextRequest, NextResponse } from "next/server"
-import {
-  getSiteForUser,
-  getUserSubscription,
-  tierAllows,
-  tierNotAllowedResponse,
-} from "@/lib/site-access"
-import { updatePageInPayload } from "@/lib/payload-client"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
-import { triggerClientRebuild } from "@/lib/triggerClientRebuild"
-import { ChangeSource, SubscriptionStatus, SubscriptionTier } from "@prisma/client"
+import { getPageFromPayload, updatePageInPayload } from "@/lib/payload-client"
 import { prisma } from "@/lib/prisma"
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
+import { triggerRebuild } from "@/lib/rebuild"
+import { getUserSubscription } from "@/lib/site-access"
+import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
+import { ChangeSource, SubscriptionStatus } from "@prisma/client"
+import { NextRequest, NextResponse } from "next/server"
 
 interface RevertBody {
-  siteId: string
-  pageId: string
-  snapshotId: string
+  versionId: string
 }
 
 function buildNestedPatch(path: string, value: string): Record<string, unknown> {
@@ -29,6 +22,7 @@ function buildNestedPatch(path: string, value: string): Record<string, unknown> 
       current[key] = value
       return
     }
+
     const next: Record<string, unknown> = {}
     current[key] = next
     current = next
@@ -37,14 +31,25 @@ function buildNestedPatch(path: string, value: string): Record<string, unknown> 
   return root
 }
 
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const keys = path.split(".")
+  let value: unknown = obj
+  for (const key of keys) {
+    if (!value || typeof value !== "object") return undefined
+    value = (value as Record<string, unknown>)[key]
+  }
+  return value
+}
+
 export async function PATCH(req: NextRequest) {
-  // 1. Auth check
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Parse body
+  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
+  if (!rateLimit.success) return rateLimit.response!
+
   let body: RevertBody
   try {
     body = await req.json()
@@ -52,75 +57,66 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { siteId, pageId, snapshotId } = body
-  if (!siteId || !pageId || !snapshotId) {
-    return NextResponse.json({ error: "siteId, pageId, and snapshotId are required" }, { status: 400 })
+  if (!body.versionId) {
+    return NextResponse.json({ error: "versionId is required" }, { status: 400 })
   }
 
-  // 2. Site ownership check
-  const { site, response: accessError } = await getSiteForUser(siteId, session.user.id)
-  if (accessError) return accessError
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  const version = await prisma.versionSnapshot.findUnique({
+    where: { id: body.versionId },
+    include: { site: true },
+  })
 
-  // 3. Tier check
+  if (!version) return NextResponse.json({ error: "Version not found" }, { status: 404 })
+  if (version.site.ownerId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+  if (!version.site.domainVerified || !version.site.linked) {
+    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+  }
+
   const subscription = await getUserSubscription(session.user.id)
   if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
     return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
   }
-  if (!tierAllows(subscription.tier, SubscriptionTier.TIER1)) {
-    return tierNotAllowedResponse("version rollback")
+
+  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(
+    version.site,
+    version.pageSlug
+  )
+  if (pageError) return NextResponse.json({ error: pageError }, { status: pageStatus })
+
+  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
+  if (!pageDoc || typeof pageDoc.id !== "string") {
+    return NextResponse.json({ error: "Page not found" }, { status: 404 })
   }
 
-  // 4. Rate limit check
-  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
-  if (!rateLimit.success) return rateLimit.response!
+  const currentValue = String(getNestedValue(pageDoc, version.fieldKey) ?? "")
 
-  // Fetch the snapshot
-  const snapshot = await prisma.versionSnapshot.findUnique({
-    where: { id: snapshotId },
-  })
+  const updateData = buildNestedPatch(version.fieldKey, version.previousValue)
+  const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
+    version.site,
+    pageDoc.id,
+    updateData
+  )
+  if (payloadError) return NextResponse.json({ error: payloadError }, { status: payloadStatus })
 
-  if (!snapshot || snapshot.siteId !== siteId) {
-    return NextResponse.json({ error: "Snapshot not found" }, { status: 404 })
-  }
-
-  // Save a new snapshot recording the revert action
   await createVersionSnapshot({
-    siteId,
-    pageSlug: snapshot.pageSlug,
-    fieldKey: snapshot.fieldKey,
-    previousValue: snapshot.newValue,
-    newValue: snapshot.previousValue,
+    siteId: version.siteId,
+    pageSlug: version.pageSlug,
+    fieldKey: version.fieldKey,
+    previousValue: currentValue,
+    newValue: version.previousValue,
     changedBy: session.user.id,
     source: ChangeSource.MANUAL,
     maxVersions: getMaxVersions(subscription.tier),
   })
 
-  // Apply the reverted value to Payload
-  const updateData = buildNestedPatch(snapshot.fieldKey, snapshot.previousValue)
-  const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
-    site,
-    pageId,
-    updateData
-  )
-  if (payloadError) {
-    return NextResponse.json({ error: payloadError }, { status: payloadStatus })
-  }
-
-  // Trigger rebuild
-  if (site.payloadUrl) {
-    await triggerClientRebuild({
-      siteRebuildUrl: site.payloadUrl,
-      webhookSecret: process.env.RELAYWEB_CLIENT_WEBHOOK_SECRET ?? "",
-      source: "platform-revert",
-      pageSlug: snapshot.pageSlug,
-      triggeredBy: session.user.id,
-    })
-  }
-
-  return NextResponse.json({
-    success: true,
-    revertedField: snapshot.fieldKey,
-    revertedTo: snapshot.previousValue,
+  await triggerRebuild(version.site.repoUrl ?? "", {
+    source: "platform-revert",
+    page: version.pageSlug,
+    field: version.fieldKey,
+    triggeredBy: session.user.id,
   })
+
+  return NextResponse.json({ success: true, revertedTo: version.previousValue })
 }

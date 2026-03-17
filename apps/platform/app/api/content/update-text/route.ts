@@ -1,24 +1,18 @@
 import { auth } from "@/lib/auth"
-import { NextRequest, NextResponse } from "next/server"
-import {
-  getSiteForUser,
-  getUserSubscription,
-  tierAllows,
-  tierNotAllowedResponse,
-} from "@/lib/site-access"
-import { updatePageInPayload } from "@/lib/payload-client"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
+import { sendEmail } from "@/lib/email"
+import { getPageFromPayload, updatePageInPayload } from "@/lib/payload-client"
+import { prisma } from "@/lib/prisma"
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
-import { triggerClientRebuild } from "@/lib/triggerClientRebuild"
-import { ChangeSource, SubscriptionStatus, SubscriptionTier } from "@prisma/client"
+import { triggerRebuild } from "@/lib/rebuild"
+import { getUserSubscription } from "@/lib/site-access"
+import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
+import { ChangeSource, SubscriptionStatus } from "@prisma/client"
+import { NextRequest, NextResponse } from "next/server"
 
 interface UpdateTextBody {
-  siteId: string
-  pageId: string
-  pageSlug: string
-  fieldKey: string
-  previousValue: string
-  newValue: string
+  page: string
+  field: string
+  value: string
 }
 
 function buildNestedPatch(path: string, value: string): Record<string, unknown> {
@@ -39,14 +33,25 @@ function buildNestedPatch(path: string, value: string): Record<string, unknown> 
   return root
 }
 
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  const keys = path.split(".")
+  let value: unknown = obj
+  for (const key of keys) {
+    if (!value || typeof value !== "object") return undefined
+    value = (value as Record<string, unknown>)[key]
+  }
+  return value
+}
+
 export async function PATCH(req: NextRequest) {
-  // 1. Auth check
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Parse body
+  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
+  if (!rateLimit.success) return rateLimit.response!
+
   let body: UpdateTextBody
   try {
     body = await req.json()
@@ -54,63 +59,85 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { siteId, pageId, pageSlug, fieldKey, previousValue, newValue } = body
-
-  if (!siteId || !pageId || !pageSlug || !fieldKey || newValue === undefined) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+  const { page, field, value } = body
+  if (!page || !field || value === undefined) {
+    return NextResponse.json({ error: "page, field, and value are required" }, { status: 400 })
   }
 
-  // 2. Site ownership check
-  const { site, response: accessError } = await getSiteForUser(siteId, session.user.id)
-  if (accessError) return accessError
+  const site = await prisma.site.findFirst({
+    where: { ownerId: session.user.id },
+    orderBy: { createdAt: "desc" },
+  })
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  if (!site.domainVerified || !site.linked) {
+    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+  }
 
-  // 3. Tier check
   const subscription = await getUserSubscription(session.user.id)
   if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
     return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
   }
-  if (!tierAllows(subscription.tier, SubscriptionTier.TIER1)) {
-    return tierNotAllowedResponse("text content editing")
+
+  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(site, page)
+  if (pageError) return NextResponse.json({ error: pageError }, { status: pageStatus })
+
+  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
+  if (!pageDoc || typeof pageDoc.id !== "string") {
+    return NextResponse.json({ error: "Page not found" }, { status: 404 })
   }
 
-  // 4. Rate limit check
-  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
-  if (!rateLimit.success) return rateLimit.response!
+  const oldValue = String(getNestedValue(pageDoc, field) ?? "")
+  const maxVersions = getMaxVersions(subscription.tier)
 
-  // Save version snapshot BEFORE making any change
   await createVersionSnapshot({
-    siteId,
-    pageSlug,
-    fieldKey,
-    previousValue: previousValue ?? "",
-    newValue,
+    siteId: site.id,
+    pageSlug: page,
+    fieldKey: field,
+    previousValue: oldValue,
+    newValue: value,
     changedBy: session.user.id,
     source: ChangeSource.MANUAL,
-    maxVersions: getMaxVersions(subscription.tier),
+    maxVersions,
   })
 
-  // Update content in Payload
-  const updateData = buildNestedPatch(fieldKey, newValue)
+  const updateData = buildNestedPatch(field, value)
   const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
     site,
-    pageId,
+    pageDoc.id,
     updateData
   )
   if (payloadError) {
     return NextResponse.json({ error: payloadError }, { status: payloadStatus })
   }
 
-  // Trigger rebuild
-  if (site.payloadUrl) {
-    await triggerClientRebuild({
-      siteRebuildUrl: site.payloadUrl,
-      webhookSecret: process.env.RELAYWEB_CLIENT_WEBHOOK_SECRET ?? "",
-      source: "platform-text-update",
-      pageSlug,
-      triggeredBy: session.user.id,
+  await triggerRebuild(site.repoUrl ?? "", {
+    source: "platform-text-update",
+    page,
+    field,
+    triggeredBy: session.user.id,
+  })
+
+  const versionCount = await prisma.versionSnapshot.count({
+    where: {
+      siteId: site.id,
+      pageSlug: page,
+      fieldKey: field,
+    },
+  })
+
+  const agencyEmail = "hello@morgandev.studio"
+  try {
+    await sendEmail({
+      to: agencyEmail,
+      subject: `Client updated ${field} on ${page}`,
+      html: `<p>Client ${session.user.id} updated <strong>${field}</strong> on <strong>${page}</strong>.</p>`,
     })
+  } catch (error) {
+    console.error("[Content] Agency notification email failed:", error)
   }
 
-  return NextResponse.json({ success: true, fieldKey, newValue })
+  return NextResponse.json({
+    success: true,
+    versionsRemaining: Math.max(maxVersions - versionCount, 0),
+  })
 }

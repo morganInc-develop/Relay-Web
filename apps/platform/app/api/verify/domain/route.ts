@@ -10,7 +10,8 @@ import {
   normalizeDomain,
   isTokenExpired,
 } from "@/lib/domain-verification"
-import { sendDomainVerifiedEmail } from "@/lib/emails"
+import { sendEmail } from "@/lib/email"
+import { domainVerifiedEmail } from "@/lib/email-templates"
 
 // Rate limiter — 5 attempts per hour per user
 const ratelimit = new Ratelimit({
@@ -228,11 +229,17 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    sendDomainVerifiedEmail(
-      session.user.email!,
-      session.user.name ?? "there",
-      site.domain
-    ).catch(console.error)
+    if (session.user.email) {
+      try {
+        await sendEmail({
+          to: session.user.email,
+          subject: `Domain verified — ${site.domain}`,
+          html: domainVerifiedEmail(site.domain),
+        })
+      } catch (e) {
+        console.error("[Verify] Domain verified email failed:", e)
+      }
+    }
 
     return NextResponse.json({
       success: true,

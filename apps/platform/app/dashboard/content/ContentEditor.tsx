@@ -1,341 +1,517 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Save, RotateCcw, Globe, FileText, Search } from "lucide-react"
-
-interface Page {
-  id: string
-  title: string
-  slug: string
-  hero?: {
-    heading?: string
-    subheading?: string
-    ctaText?: string
-  }
-  meta?: {
-    title?: string
-    description?: string
-    noIndex?: boolean
-  }
-}
+import ScheduledPublish from "@/components/content/ScheduledPublish"
+import { useEffect, useMemo, useState } from "react"
+import { Check, Clock3, RotateCcw, Save } from "lucide-react"
 
 interface ContentEditorProps {
   siteId: string
 }
 
-type EditorTab = "text" | "seo"
-
-interface ListPagesResponse {
-  pages?: {
-    docs?: Page[]
-  } | null
+interface PageOption {
+  slug: string
+  title: string
 }
 
-export default function ContentEditor({ siteId }: ContentEditorProps) {
-  const [pages, setPages] = useState<Page[]>([])
-  const [selectedPage, setSelectedPage] = useState<Page | null>(null)
-  const [activeTab, setActiveTab] = useState<EditorTab>("text")
-  const [isSaving, setIsSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle")
-  const [editedFields, setEditedFields] = useState<Record<string, string>>({})
-  const [isLoadingPages, setIsLoadingPages] = useState(true)
+interface FieldVersion {
+  id: string
+  previousValue: string
+  newValue: string
+  createdAt: string
+}
 
-  // Fetch pages on mount
+interface GetPageResponse {
+  fields: Record<string, string>
+  versions: Record<string, FieldVersion[]>
+}
+
+type SeoApiField = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage"
+
+interface SeoFieldConfig {
+  key: string
+  apiField: SeoApiField
+  label: string
+  max?: number
+  multiline: boolean
+}
+
+const seoFieldMap: SeoFieldConfig[] = [
+  { key: "meta.title", apiField: "metaTitle", label: "Meta Title", max: 60, multiline: false },
+  {
+    key: "meta.description",
+    apiField: "metaDescription",
+    label: "Meta Description",
+    max: 160,
+    multiline: true,
+  },
+  { key: "meta.ogTitle", apiField: "ogTitle", label: "OG Title", max: 60, multiline: false },
+  {
+    key: "meta.ogDescription",
+    apiField: "ogDescription",
+    label: "OG Description",
+    max: 200,
+    multiline: true,
+  },
+  { key: "meta.ogImage", apiField: "ogImage", label: "OG Image URL", multiline: false },
+]
+
+type EditorTab = "text" | "seo"
+
+export default function ContentEditor({ siteId }: ContentEditorProps) {
+  const [pages, setPages] = useState<PageOption[]>([])
+  const [selectedPage, setSelectedPage] = useState("")
+  const [fields, setFields] = useState<Record<string, string>>({})
+  const [serverFields, setServerFields] = useState<Record<string, string>>({})
+  const [versions, setVersions] = useState<Record<string, FieldVersion[]>>({})
+  const [versionsRemaining, setVersionsRemaining] = useState<Record<string, number>>({})
+  const [activeTab, setActiveTab] = useState<EditorTab>("text")
+  const [loading, setLoading] = useState(true)
+  const [loadingPage, setLoadingPage] = useState(false)
+  const [savingField, setSavingField] = useState<string | null>(null)
+  const [savedField, setSavedField] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [historyOpenField, setHistoryOpenField] = useState<string | null>(null)
+  const [globalError, setGlobalError] = useState<string | null>(null)
+
+  const textFields = useMemo(
+    () =>
+      Object.keys(fields).filter(
+        (key) =>
+          !key.startsWith("meta.") &&
+          !["slug", "title"].includes(key) &&
+          typeof fields[key] === "string"
+      ),
+    [fields]
+  )
+
+  const loadPage = async (slug: string) => {
+    setLoadingPage(true)
+    setGlobalError(null)
+    try {
+      const res = await fetch(`/api/content/get-page?slug=${encodeURIComponent(slug)}`)
+      const data = (await res.json()) as GetPageResponse & { error?: string }
+      if (!res.ok) throw new Error(data.error ?? "Failed to load page fields")
+
+      setFields(data.fields ?? {})
+      setServerFields(data.fields ?? {})
+      setVersions(data.versions ?? {})
+      setHistoryOpenField(null)
+      setFieldErrors({})
+    } catch (err) {
+      setGlobalError(err instanceof Error ? err.message : "Failed to load page")
+    } finally {
+      setLoadingPage(false)
+    }
+  }
+
   useEffect(() => {
-    async function fetchPages() {
+    const loadPages = async () => {
+      setLoading(true)
+      setGlobalError(null)
       try {
-        const res = await fetch(`/api/content/list-pages?siteId=${siteId}`)
-        if (res.ok) {
-          const data = (await res.json()) as ListPagesResponse
-          const pageList = data.pages?.docs ?? []
-          setPages(pageList)
-          if (pageList.length > 0) setSelectedPage(pageList[0])
+        const res = await fetch("/api/content/list-pages")
+        const data = (await res.json()) as { pages?: PageOption[]; error?: string }
+        if (!res.ok) throw new Error(data.error ?? "Failed to load pages")
+
+        const pageList = data.pages ?? []
+        setPages(pageList)
+        if (pageList.length > 0) {
+          setSelectedPage(pageList[0].slug)
+          await loadPage(pageList[0].slug)
         }
       } catch (err) {
-        console.error("Failed to fetch pages:", err)
+        setGlobalError(err instanceof Error ? err.message : "Failed to load pages")
       } finally {
-        setIsLoadingPages(false)
+        setLoading(false)
       }
     }
-    fetchPages()
+
+    void loadPages()
   }, [siteId])
 
-  function handleFieldChange(fieldKey: string, value: string) {
-    setEditedFields((prev) => ({ ...prev, [fieldKey]: value }))
-    setSaveStatus("idle")
+  const setFieldValue = (fieldKey: string, value: string) => {
+    setFields((prev) => ({ ...prev, [fieldKey]: value }))
   }
 
-  async function handleSaveText() {
-    if (!selectedPage || Object.keys(editedFields).length === 0) return
-    setIsSaving(true)
-    setSaveStatus("idle")
+  const markSaved = (fieldKey: string) => {
+    setSavedField(fieldKey)
+    setTimeout(() => setSavedField((current) => (current === fieldKey ? null : current)), 2000)
+  }
 
+  const saveTextField = async (fieldKey: string) => {
+    if (!selectedPage) return
+    const value = fields[fieldKey] ?? ""
+    const previousValue = serverFields[fieldKey] ?? ""
+
+    setSavingField(fieldKey)
+    setFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }))
     try {
-      for (const [fieldKey, newValue] of Object.entries(editedFields)) {
-        const previousValue = getFieldValue(selectedPage, fieldKey) ?? ""
-        const isSeoField = fieldKey.startsWith("meta.")
+      const res = await fetch("/api/content/update-text", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          page: selectedPage,
+          field: fieldKey,
+          value,
+        }),
+      })
+      const data = (await res.json()) as { error?: string; versionsRemaining?: number }
+      if (!res.ok) throw new Error(data.error ?? "Failed to save field")
 
-        if (isSeoField) {
-          const previousValues = {
-            metaTitle: getFieldValue(selectedPage, "meta.title"),
-            metaDescription: getFieldValue(selectedPage, "meta.description"),
-            noIndex: getFieldValue(selectedPage, "meta.noIndex") === "true",
-          }
-          const payload: Record<string, unknown> = {
-            siteId,
-            pageId: selectedPage.id,
-            pageSlug: selectedPage.slug,
-            previousValues,
-          }
-          if (fieldKey === "meta.title") payload.metaTitle = newValue
-          if (fieldKey === "meta.description") payload.metaDescription = newValue
-          if (fieldKey === "meta.noIndex") payload.noIndex = newValue === "true"
-
-          const res = await fetch("/api/content/update-seo", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
-          if (!res.ok) {
-            if (res.status !== 429) setSaveStatus("error")
-            return
-          }
-        } else {
-          const res = await fetch("/api/content/update-text", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              siteId,
-              pageId: selectedPage.id,
-              pageSlug: selectedPage.slug,
-              fieldKey,
-              previousValue,
-              newValue,
-            }),
-          })
-          if (!res.ok) {
-            if (res.status !== 429) setSaveStatus("error")
-            return
-          }
-        }
+      setServerFields((prev) => ({ ...prev, [fieldKey]: value }))
+      if (typeof data.versionsRemaining === "number") {
+        setVersionsRemaining((prev) => ({ ...prev, [fieldKey]: data.versionsRemaining as number }))
       }
-      setSaveStatus("saved")
-      setEditedFields({})
-      setTimeout(() => setSaveStatus("idle"), 3000)
-    } catch {
-      setSaveStatus("error")
+      markSaved(fieldKey)
+      await loadPage(selectedPage)
+    } catch (err) {
+      setFields((prev) => ({ ...prev, [fieldKey]: previousValue }))
+      setFieldErrors((prev) => ({
+        ...prev,
+        [fieldKey]: err instanceof Error ? err.message : "Save failed",
+      }))
     } finally {
-      setIsSaving(false)
+      setSavingField((current) => (current === fieldKey ? null : current))
     }
   }
 
-  function getFieldValue(page: Page, fieldKey: string): string {
-    const parts = fieldKey.split(".")
-    let value: unknown = page
-    for (const part of parts) {
-      value = (value as Record<string, unknown>)?.[part]
+  const saveSeoField = async (fieldKey: string, apiField: string) => {
+    if (!selectedPage) return
+    const value = fields[fieldKey] ?? ""
+    const previousValue = serverFields[fieldKey] ?? ""
+
+    setSavingField(fieldKey)
+    setFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }))
+    try {
+      const res = await fetch("/api/content/update-seo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          page: selectedPage,
+          field: apiField,
+          value,
+        }),
+      })
+      const data = (await res.json()) as { error?: string; versionsRemaining?: number }
+      if (!res.ok) throw new Error(data.error ?? "Failed to save SEO field")
+
+      setServerFields((prev) => ({ ...prev, [fieldKey]: value }))
+      if (typeof data.versionsRemaining === "number") {
+        setVersionsRemaining((prev) => ({ ...prev, [fieldKey]: data.versionsRemaining as number }))
+      }
+      markSaved(fieldKey)
+      await loadPage(selectedPage)
+    } catch (err) {
+      setFields((prev) => ({ ...prev, [fieldKey]: previousValue }))
+      setFieldErrors((prev) => ({
+        ...prev,
+        [fieldKey]: err instanceof Error ? err.message : "Save failed",
+      }))
+    } finally {
+      setSavingField((current) => (current === fieldKey ? null : current))
     }
-    return String(value ?? "")
   }
 
-  function getEditedOrOriginal(fieldKey: string): string {
-    return editedFields[fieldKey] ?? getFieldValue(selectedPage!, fieldKey)
+  const revertVersion = async (fieldKey: string, versionId: string) => {
+    setSavingField(fieldKey)
+    setFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }))
+    try {
+      const res = await fetch("/api/content/revert", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId }),
+      })
+      const data = (await res.json()) as { error?: string; revertedTo?: string }
+      if (!res.ok) throw new Error(data.error ?? "Failed to revert version")
+
+      if (typeof data.revertedTo === "string") {
+        setFields((prev) => ({ ...prev, [fieldKey]: data.revertedTo as string }))
+        setServerFields((prev) => ({ ...prev, [fieldKey]: data.revertedTo as string }))
+      }
+      markSaved(fieldKey)
+      await loadPage(selectedPage)
+    } catch (err) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        [fieldKey]: err instanceof Error ? err.message : "Revert failed",
+      }))
+    } finally {
+      setSavingField((current) => (current === fieldKey ? null : current))
+    }
   }
 
-  if (isLoadingPages) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+      <div className="flex items-center justify-center py-10">
+        <div className="w-7 h-7 rounded-full border-4 border-gray-200 border-t-gray-900 animate-spin" />
       </div>
     )
+  }
+
+  if (globalError) {
+    return <p className="text-sm text-red-600">{globalError}</p>
   }
 
   if (pages.length === 0) {
-    return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-        <FileText className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-        <p className="text-gray-600 font-medium">No pages found</p>
-        <p className="text-gray-400 text-sm mt-1">
-          Add pages to your site in the Payload CMS admin panel first.
-        </p>
-      </div>
-    )
+    return <p className="text-sm text-gray-500">No pages found in the connected Payload site.</p>
   }
 
   return (
-    <div className="flex gap-6 h-full">
-      {/* Page list sidebar */}
-      <div className="w-56 shrink-0">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Pages</p>
-        <div className="space-y-1">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-sm font-medium text-gray-700">Page</label>
+        <select
+          value={selectedPage}
+          onChange={async (e) => {
+            const slug = e.target.value
+            setSelectedPage(slug)
+            await loadPage(slug)
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+        >
           {pages.map((page) => (
-            <button
-              key={page.id}
-              onClick={() => { setSelectedPage(page); setEditedFields({}) }}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                selectedPage?.id === page.id
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-600 hover:bg-gray-100"
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5 inline mr-2 opacity-60" />
+            <option key={page.slug} value={page.slug}>
               {page.title}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
-      {/* Editor panel */}
-      {selectedPage && (
-        <div className="flex-1 min-w-0">
-          {/* Tabs */}
-          <div className="flex gap-1 mb-6 border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab("text")}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "text"
-                  ? "border-gray-900 text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <FileText className="w-4 h-4 inline mr-1.5" />
-              Text Content
-            </button>
-            <button
-              onClick={() => setActiveTab("seo")}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "seo"
-                  ? "border-gray-900 text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Search className="w-4 h-4 inline mr-1.5" />
-              SEO
-            </button>
-          </div>
+      <div className="flex gap-2 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab("text")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 ${
+            activeTab === "text"
+              ? "border-gray-900 text-gray-900"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Text Fields
+        </button>
+        <button
+          onClick={() => setActiveTab("seo")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 ${
+            activeTab === "seo"
+              ? "border-gray-900 text-gray-900"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          SEO Fields
+        </button>
+      </div>
 
-          {/* Text content tab */}
-          {activeTab === "text" && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Hero Heading
-                </label>
-                <input
-                  type="text"
-                  value={getEditedOrOriginal("hero.heading")}
-                  onChange={(e) => handleFieldChange("hero.heading", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  placeholder="Enter hero heading..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Hero Subheading
-                </label>
-                <textarea
-                  value={getEditedOrOriginal("hero.subheading")}
-                  onChange={(e) => handleFieldChange("hero.subheading", e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
-                  placeholder="Enter hero subheading..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  CTA Button Text
-                </label>
-                <input
-                  type="text"
-                  value={getEditedOrOriginal("hero.ctaText")}
-                  onChange={(e) => handleFieldChange("hero.ctaText", e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  placeholder="Enter CTA button text..."
-                />
-              </div>
-            </div>
-          )}
+      {loadingPage ? (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-900 animate-spin" />
+          Loading page fields...
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {activeTab === "text" &&
+            textFields.map((fieldKey) => {
+              const value = fields[fieldKey] ?? ""
+              const fieldVersions = versions[fieldKey] ?? []
+              const isSaving = savingField === fieldKey
+              const isSaved = savedField === fieldKey
 
-          {/* SEO tab */}
-          {activeTab === "seo" && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Meta Title
-                  <span className="text-gray-400 font-normal ml-2 text-xs">
-                    ({getEditedOrOriginal("meta.title").length}/60 characters)
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={getEditedOrOriginal("meta.title")}
-                  onChange={(e) => handleFieldChange("meta.title", e.target.value)}
-                  maxLength={60}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  placeholder="Enter meta title..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Meta Description
-                  <span className="text-gray-400 font-normal ml-2 text-xs">
-                    ({getEditedOrOriginal("meta.description").length}/160 characters)
-                  </span>
-                </label>
-                <textarea
-                  value={getEditedOrOriginal("meta.description")}
-                  onChange={(e) => handleFieldChange("meta.description", e.target.value)}
-                  maxLength={160}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 resize-none"
-                  placeholder="Enter meta description..."
-                />
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="noIndex"
-                  checked={getEditedOrOriginal("meta.noIndex") === "true"}
-                  onChange={(e) => handleFieldChange("meta.noIndex", String(e.target.checked))}
-                  className="w-4 h-4 rounded"
-                />
-                <label htmlFor="noIndex" className="text-sm font-medium text-gray-700">
-                  No Index (hide this page from search engines)
-                </label>
-              </div>
-            </div>
-          )}
+              return (
+                <div key={fieldKey} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-800">{fieldKey}</p>
+                    {typeof versionsRemaining[fieldKey] === "number" && (
+                      <span className="text-xs text-gray-500">
+                        {versionsRemaining[fieldKey]} versions remaining
+                      </span>
+                    )}
+                  </div>
 
-          {/* Save bar */}
-          {Object.keys(editedFields).length > 0 && (
-            <div className="mt-8 flex items-center gap-3">
-              <button
-                onClick={handleSaveText}
-                disabled={isSaving}
-                className="flex items-center gap-2 bg-gray-900 text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-700 transition-colors disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {isSaving ? "Saving..." : "Save changes"}
-              </button>
-              <button
-                onClick={() => setEditedFields({})}
-                className="flex items-center gap-2 text-gray-500 px-4 py-2.5 rounded-lg text-sm hover:bg-gray-100 transition-colors"
-              >
-                <RotateCcw className="w-4 h-4" />
-                Discard
-              </button>
-              {saveStatus === "saved" && (
-                <span className="text-green-600 text-sm font-medium">
-                  ✓ Saved — site rebuilding...
-                </span>
-              )}
-              {saveStatus === "error" && (
-                <span className="text-red-600 text-sm font-medium">
-                  Failed to save. Try again.
-                </span>
-              )}
-            </div>
-          )}
+                  {value.length > 120 ? (
+                    <textarea
+                      value={value}
+                      onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+                      rows={4}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  ) : (
+                    <input
+                      value={value}
+                      onChange={(e) => setFieldValue(fieldKey, e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => saveTextField(fieldKey)}
+                      disabled={isSaving}
+                      className="inline-flex items-center gap-1.5 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-md hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      {isSaving ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      onClick={() =>
+                        setHistoryOpenField((current) => (current === fieldKey ? null : fieldKey))
+                      }
+                      className="inline-flex items-center gap-1.5 text-xs text-gray-600 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50"
+                    >
+                      <Clock3 className="w-3.5 h-3.5" />
+                      History
+                    </button>
+                    {isSaved && (
+                      <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                        <Check className="w-3.5 h-3.5" />
+                        Saved
+                      </span>
+                    )}
+                  </div>
+
+                  <ScheduledPublish page={selectedPage} field={fieldKey} value={value} />
+
+                  {historyOpenField === fieldKey && (
+                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
+                      <p className="text-xs font-semibold text-gray-600">Version History</p>
+                      {fieldVersions.length === 0 ? (
+                        <p className="text-xs text-gray-500">No versions yet.</p>
+                      ) : (
+                        fieldVersions.slice(0, 10).map((version) => (
+                          <div
+                            key={version.id}
+                            className="border border-gray-200 bg-white rounded-md p-2 space-y-1"
+                          >
+                            <p className="text-xs text-gray-500">
+                              {new Date(version.createdAt).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-gray-700">
+                              Previous: <span className="font-medium">{version.previousValue}</span>
+                            </p>
+                            <button
+                              onClick={() => revertVersion(fieldKey, version.id)}
+                              className="inline-flex items-center gap-1 text-xs text-gray-700 border border-gray-300 rounded-md px-2 py-1 hover:bg-gray-50"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Revert
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {fieldErrors[fieldKey] && <p className="text-xs text-red-600">{fieldErrors[fieldKey]}</p>}
+                </div>
+              )
+            })}
+
+          {activeTab === "seo" &&
+            seoFieldMap.map((seoField) => {
+              const value = fields[seoField.key] ?? ""
+              const fieldVersions = versions[seoField.key] ?? []
+              const isSaving = savingField === seoField.key
+              const isSaved = savedField === seoField.key
+              const overLimit = typeof seoField.max === "number" && value.length > seoField.max
+
+              return (
+                <div key={seoField.key} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-800">{seoField.label}</p>
+                    <div className="flex items-center gap-2">
+                      {typeof seoField.max === "number" && (
+                        <span
+                          className={`text-xs ${overLimit ? "text-red-600 font-semibold" : "text-gray-500"}`}
+                        >
+                          {value.length}/{seoField.max}
+                        </span>
+                      )}
+                      {typeof versionsRemaining[seoField.key] === "number" && (
+                        <span className="text-xs text-gray-500">
+                          {versionsRemaining[seoField.key]} versions remaining
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {seoField.multiline ? (
+                    <textarea
+                      value={value}
+                      onChange={(e) => setFieldValue(seoField.key, e.target.value)}
+                      rows={3}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  ) : (
+                    <input
+                      value={value}
+                      onChange={(e) => setFieldValue(seoField.key, e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => saveSeoField(seoField.key, seoField.apiField)}
+                      disabled={isSaving}
+                      className="inline-flex items-center gap-1.5 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-md hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      {isSaving ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      onClick={() =>
+                        setHistoryOpenField((current) =>
+                          current === seoField.key ? null : seoField.key
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 text-xs text-gray-600 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50"
+                    >
+                      <Clock3 className="w-3.5 h-3.5" />
+                      History
+                    </button>
+                    {isSaved && (
+                      <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                        <Check className="w-3.5 h-3.5" />
+                        Saved
+                      </span>
+                    )}
+                  </div>
+
+                  <ScheduledPublish page={selectedPage} field={seoField.key} value={value} />
+
+                  {historyOpenField === seoField.key && (
+                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
+                      <p className="text-xs font-semibold text-gray-600">Version History</p>
+                      {fieldVersions.length === 0 ? (
+                        <p className="text-xs text-gray-500">No versions yet.</p>
+                      ) : (
+                        fieldVersions.slice(0, 10).map((version) => (
+                          <div
+                            key={version.id}
+                            className="border border-gray-200 bg-white rounded-md p-2 space-y-1"
+                          >
+                            <p className="text-xs text-gray-500">
+                              {new Date(version.createdAt).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-gray-700">
+                              Previous: <span className="font-medium">{version.previousValue}</span>
+                            </p>
+                            <button
+                              onClick={() => revertVersion(seoField.key, version.id)}
+                              className="inline-flex items-center gap-1 text-xs text-gray-700 border border-gray-300 rounded-md px-2 py-1 hover:bg-gray-50"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Revert
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {fieldErrors[seoField.key] && (
+                    <p className="text-xs text-red-600">{fieldErrors[seoField.key]}</p>
+                  )}
+                </div>
+              )
+            })}
         </div>
       )}
     </div>

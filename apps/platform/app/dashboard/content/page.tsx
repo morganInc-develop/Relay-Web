@@ -2,7 +2,8 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
 import { SubscriptionStatus } from "@prisma/client"
-import ContentEditor from "./ContentEditor"
+import TextEditor from "@/components/content/TextEditor"
+import SeoEditor from "@/components/content/SeoEditor"
 
 export default async function ContentPage() {
   const session = await auth()
@@ -16,7 +17,6 @@ export default async function ContentPage() {
     redirect("/onboarding")
   }
 
-  // Get the user's newest site
   const site = await prisma.site.findFirst({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
@@ -44,9 +44,16 @@ export default async function ContentPage() {
           Edit your website content. Changes are saved automatically and your site rebuilds within 60 seconds.
         </p>
       </div>
-      <ContentEditor
-        siteId={site.id}
-      />
+
+      <section className="mt-8">
+        <h2 className="text-lg font-semibold mb-4">Edit Content</h2>
+        <TextEditor />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-lg font-semibold mb-4">SEO Fields</h2>
+        <SeoEditor />
+      </section>
     </div>
   )
 }

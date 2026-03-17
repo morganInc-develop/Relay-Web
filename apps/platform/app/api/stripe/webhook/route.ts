@@ -8,10 +8,9 @@ import type Stripe from "stripe";
 
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
-import {
-  sendPaymentFailedEmail,
-  sendSubscriptionActivatedEmail,
-} from "@/lib/emails";
+import { sendEmail } from "@/lib/email";
+import { subscriptionActivatedEmail } from "@/lib/email-templates";
+import { sendPaymentFailedEmail } from "@/lib/emails";
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -207,18 +206,6 @@ export async function POST(req: Request) {
         },
       });
 
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (user?.email) {
-        const tierNames: Record<string, string> = {
-          TIER1: "Starter", TIER2: "Growth", TIER3: "Pro"
-        };
-        sendSubscriptionActivatedEmail(
-          user.email,
-          user.name ?? "there",
-          tierNames[subscriptionTier] ?? "Starter"
-        ).catch(console.error);
-      }
-
       const site = await prisma.site.findFirst({ where: { ownerId: userId } });
       if (site) {
         await prisma.aIUsage.upsert({
@@ -227,6 +214,114 @@ export async function POST(req: Request) {
           update: {},
         });
       }
+      break;
+    }
+
+    case "customer.subscription.created": {
+      const subscription = event.data.object as StripeSubscriptionWithPeriods;
+      const customer = subscription.customer;
+
+      if (typeof customer !== "string") {
+        break;
+      }
+
+      const { currentPeriodStart, currentPeriodEnd } =
+        resolveSubscriptionPeriods(subscription);
+      const stripePriceId = subscription.items.data[0]?.price.id ?? null;
+
+      const priceToTier: Record<string, SubscriptionTier> = {
+        [process.env.STRIPE_PRICE_STARTER ?? ""]: SubscriptionTier.TIER1,
+        [process.env.STRIPE_PRICE_GROWTH ?? ""]: SubscriptionTier.TIER2,
+        [process.env.STRIPE_PRICE_PRO ?? ""]: SubscriptionTier.TIER3,
+      };
+      const subscriptionTier = stripePriceId
+        ? priceToTier[stripePriceId]
+        : undefined;
+
+      const updated = await prisma.subscription.updateMany({
+        where: { stripeCustomerId: customer },
+        data: {
+          ...(subscriptionTier ? { tier: subscriptionTier } : {}),
+          status: SubscriptionStatus.ACTIVE,
+          stripeSubscriptionId: subscription.id,
+          stripePriceId,
+          currentPeriodStart,
+          currentPeriodEnd,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        },
+      });
+
+      if (updated.count === 0) {
+        const metadataUserId = subscription.metadata?.userId;
+        if (metadataUserId) {
+          const tierByMetadata: Record<string, SubscriptionTier> = {
+            "1": SubscriptionTier.TIER1,
+            "2": SubscriptionTier.TIER2,
+            "3": SubscriptionTier.TIER3,
+            TIER1: SubscriptionTier.TIER1,
+            TIER2: SubscriptionTier.TIER2,
+            TIER3: SubscriptionTier.TIER3,
+          };
+          const fallbackTier =
+            subscriptionTier ??
+            tierByMetadata[subscription.metadata?.tier ?? ""] ??
+            SubscriptionTier.TIER1;
+
+          await prisma.subscription.upsert({
+            where: { userId: metadataUserId },
+            create: {
+              userId: metadataUserId,
+              tier: fallbackTier,
+              status: SubscriptionStatus.ACTIVE,
+              stripeCustomerId: customer,
+              stripeSubscriptionId: subscription.id,
+              stripePriceId,
+              currentPeriodStart,
+              currentPeriodEnd,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            },
+            update: {
+              tier: fallbackTier,
+              status: SubscriptionStatus.ACTIVE,
+              stripeCustomerId: customer,
+              stripeSubscriptionId: subscription.id,
+              stripePriceId,
+              currentPeriodStart,
+              currentPeriodEnd,
+              cancelAtPeriodEnd: subscription.cancel_at_period_end,
+            },
+          });
+        }
+      }
+
+      const subscriptionRecord = await prisma.subscription.findUnique({
+        where: { stripeCustomerId: customer },
+        include: { user: true },
+      });
+
+      if (subscriptionRecord?.user?.email) {
+        const priceId = subscription.items.data[0]?.price.id ?? "";
+        const tierMap: Record<string, string> = {
+          [process.env.STRIPE_PRICE_STARTER!]: "Starter",
+          [process.env.STRIPE_PRICE_GROWTH!]: "Growth",
+          [process.env.STRIPE_PRICE_PRO!]: "Pro",
+        };
+        const tierName = tierMap[priceId] ?? "your plan";
+
+        try {
+          await sendEmail({
+            to: subscriptionRecord.user.email,
+            subject: "Your RelayWeb subscription is active",
+            html: subscriptionActivatedEmail(
+              subscriptionRecord.user.name ?? "there",
+              tierName
+            ),
+          });
+        } catch (e) {
+          console.error("[Stripe] Subscription activated email failed:", e);
+        }
+      }
+
       break;
     }
 

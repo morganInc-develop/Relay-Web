@@ -2,5 +2,11 @@
   "installCommand": "npm --prefix apps/platform install --include=dev && npm --prefix apps/platform run prisma:generate && rm -rf node_modules && ln -s apps/platform/node_modules node_modules",
   "buildCommand": "npm --prefix apps/platform run build",
   "outputDirectory": "apps/platform/.next",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/publish-scheduled",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }

@@ -2,8 +2,9 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import NextAuth from "next-auth";
 
 import authConfig from "@/lib/auth.config";
+import { sendEmail } from "@/lib/email";
+import { welcomeEmail } from "@/lib/email-templates";
 import { prisma } from "@/lib/prisma";
-import { sendWelcomeEmail } from "@/lib/emails";
 
 // --- Startup diagnostics — visible in Vercel function logs ---
 console.log("[auth:init] NextAuth initializing");
@@ -98,12 +99,20 @@ const nextAuth = NextAuth({
   events: {
     async createUser({ user }) {
       console.log("[auth:event] createUser — userId:", user.id, "email:", user.email);
-      if (user.email) {
-        sendWelcomeEmail(user.email, user.name ?? "there").catch(console.error);
-      }
     },
     async signIn({ user, account, isNewUser }) {
       console.log("[auth:event] signIn — userId:", user.id, "provider:", account?.provider, "isNewUser:", isNewUser);
+      if (isNewUser && user.email) {
+        try {
+          await sendEmail({
+            to: user.email,
+            subject: "Welcome to RelayWeb",
+            html: welcomeEmail(user.name ?? "there"),
+          });
+        } catch (e) {
+          console.error("[Auth] Welcome email failed:", e);
+        }
+      }
     },
     async session({ session }) {
       console.log("[auth:event] session — userId:", session.user?.id);
