@@ -161,6 +161,8 @@ model Site {
   verifyToken     String?    @unique
   verifyTokenExp  DateTime?
   whitelabelUrl   String?    // Tier 3 only — custom dashboard URL
+  linked          Boolean    @default(false)
+  linkedAt        DateTime?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 

@@ -9,6 +9,33 @@ interface SendEmailResult {
   error?: string
 }
 
+// Email 0 — Welcome (new user signup)
+export async function sendWelcomeEmail(
+  to: string,
+  name: string
+): Promise<SendEmailResult> {
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to,
+      subject: "Welcome to RelayWeb",
+      html: `
+        <h2>Welcome to RelayWeb 👋</h2>
+        <p>Hi ${name ?? "there"},</p>
+        <p>Your account is ready. The first step is to verify your domain so we can connect your site to your dashboard.</p>
+        <p><a href="https://relay-web-beige.vercel.app/dashboard/site">Get started →</a></p>
+        <p>If you have any questions, reply to this email — we're happy to help.</p>
+        <p>— The RelayWeb Team</p>
+      `,
+    })
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error"
+    console.error(`[Resend] Failed to send welcome email: ${message}`)
+    return { success: false, error: message }
+  }
+}
+
 // Email 1 — Domain verified confirmation
 export async function sendDomainVerifiedEmail(
   to: string,
