@@ -1,4 +1,6 @@
 import { auth } from "@/lib/auth"
+import { sendEmail } from "@/lib/email"
+import { seoLowScoreEmail } from "@/lib/email-templates"
 import { prisma } from "@/lib/prisma"
 import { getKeywordLimit, getScanLimit } from "@/lib/seo-limits"
 import Anthropic from "@anthropic-ai/sdk"
@@ -104,7 +106,7 @@ export async function POST(req: NextRequest) {
   const scanLimit = getScanLimit(subscription?.stripePriceId)
   const keywordLimit = getKeywordLimit(subscription?.stripePriceId)
 
-  if (keywords.length > keywordLimit) {
+  if (keywordLimit !== null && keywords.length > keywordLimit) {
     return NextResponse.json(
       { error: `Your plan supports up to ${keywordLimit} keywords per audit.` },
       { status: 400 }
@@ -223,6 +225,14 @@ Score each 0-100. Return JSON only.`
 
   const scansUsed = scansUsedThisMonth + 1
   const scansRemaining = scanLimit === null ? null : Math.max(scanLimit - scansUsed, 0)
+
+  if (audit.overallScore < 50 && session.user.email) {
+    await sendEmail({
+      to: session.user.email,
+      subject: `SEO score alert for ${page}`,
+      html: seoLowScoreEmail(page, audit.overallScore),
+    })
+  }
 
   return NextResponse.json({
     scores: audit.scores,

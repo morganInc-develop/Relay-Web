@@ -5,6 +5,8 @@ import { Redis } from "@upstash/redis"
 import { NextRequest, NextResponse } from "next/server"
 
 import { auth } from "@/lib/auth"
+import { sendEmail } from "@/lib/email"
+import { aiLimitReachedEmail } from "@/lib/email-templates"
 import { getDailyLimit, getMonthlyLimit } from "@/lib/ai-limits"
 import { AI_SYSTEM_PROMPT } from "@/lib/ai-system-prompt"
 import { SanitizationError, sanitizeUserInput } from "@/lib/ai-sanitize"
@@ -154,6 +156,19 @@ function createSlidingLimiter(limit: number, window: "1 d" | "30 d", prefix: str
   })
 }
 
+async function notifyAiLimitReached(email: string | null | undefined, name: string | null | undefined) {
+  if (!email) return
+  try {
+    await sendEmail({
+      to: email,
+      subject: "AI request limit reached",
+      html: aiLimitReachedEmail(name ?? "there"),
+    })
+  } catch (error) {
+    console.error("[ai/chat] failed to send limit reached email:", error)
+  }
+}
+
 function normalizeProposal(
   modelResult: Record<string, unknown>,
   pageSlugs: string[]
@@ -264,6 +279,7 @@ export async function POST(req: NextRequest) {
     const dailyLimiter = createSlidingLimiter(dailyLimit, "1 d", "relayweb:ai:daily")
     const dailyResult = await dailyLimiter.limit(session.user.id)
     if (!dailyResult.success) {
+      await notifyAiLimitReached(session.user.email, session.user.name)
       return NextResponse.json({ error: RATE_LIMIT_UPSELL }, { status: 429 })
     }
   }
@@ -272,6 +288,7 @@ export async function POST(req: NextRequest) {
     const monthlyLimiter = createSlidingLimiter(monthlyLimit, "30 d", "relayweb:ai:monthly")
     const monthlyResult = await monthlyLimiter.limit(session.user.id)
     if (!monthlyResult.success) {
+      await notifyAiLimitReached(session.user.email, session.user.name)
       return NextResponse.json({ error: RATE_LIMIT_UPSELL }, { status: 429 })
     }
   }

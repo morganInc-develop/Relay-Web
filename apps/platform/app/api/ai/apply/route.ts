@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (chatLog.status !== "PENDING") {
-    return NextResponse.json({ error: "Log already processed" }, { status: 409 })
+    return NextResponse.json({ error: "Log already processed" }, { status: 400 })
   }
 
   let proposal: ProposedAction
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
     select: { email: true },
   })
 
-  const recipient = agencyOwner?.email ?? process.env.AGENCY_EMAIL
+  const recipient = process.env.AGENCY_EMAIL ?? agencyOwner?.email
   if (recipient) {
     await sendEmail({
       to: recipient,

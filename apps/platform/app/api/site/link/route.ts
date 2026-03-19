@@ -5,6 +5,18 @@ import { encrypt } from "@/lib/encrypt"
 import { sendEmail } from "@/lib/email"
 import { subscriptionActivatedEmail } from "@/lib/email-templates"
 
+function validateHttpUrl(value: string, field: string): string | null {
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return `${field} must use http or https`
+    }
+    return null
+  } catch {
+    return `${field} must be a valid URL`
+  }
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) {
@@ -35,6 +47,16 @@ export async function POST(req: NextRequest) {
       { error: "repoUrl, payloadUrl, and clientDbUrl are required." },
       { status: 400 }
     )
+  }
+
+  const repoUrlError = validateHttpUrl(repoUrl, "repoUrl")
+  if (repoUrlError) {
+    return NextResponse.json({ error: repoUrlError }, { status: 400 })
+  }
+
+  const payloadUrlError = validateHttpUrl(payloadUrl, "payloadUrl")
+  if (payloadUrlError) {
+    return NextResponse.json({ error: payloadUrlError }, { status: 400 })
   }
 
   let encryptedDbUrl: string

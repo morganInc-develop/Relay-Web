@@ -10,7 +10,11 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { sendEmail } from "@/lib/email";
 import { subscriptionActivatedEmail } from "@/lib/email-templates";
-import { sendPaymentFailedEmail } from "@/lib/emails";
+import {
+  sendPaymentFailedEmail,
+  sendSubscriptionCancelledEmail,
+  sendSubscriptionReactivatedEmail,
+} from "@/lib/emails";
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +65,12 @@ function getTierDisplayName(priceId: string): string {
   if (priceId === process.env.STRIPE_PRICE_GROWTH) return "Growth";
   if (priceId === process.env.STRIPE_PRICE_PRO) return "Pro";
   return "your plan";
+}
+
+function getTierNameFromEnum(tier: SubscriptionTier | null | undefined): string {
+  if (tier === SubscriptionTier.TIER3) return "Pro";
+  if (tier === SubscriptionTier.TIER2) return "Growth";
+  return "Starter";
 }
 
 function normalizeSecret(value: string | undefined | null): string | null {
@@ -159,11 +169,6 @@ function resolveInvoicePeriods(invoice: StripeInvoiceWithSubscription): {
 }
 
 export async function POST(req: Request) {
-  // Add at the top of the POST handler — get IP from request headers
-  const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "unknown";
-  const webhookRateLimit = await checkRateLimit(rateLimiters.stripeWebhook, ip);
-  if (!webhookRateLimit.success) return webhookRateLimit.response!;
-
   const body = await req.text();
   const sig = (await headers()).get("stripe-signature");
 
@@ -186,6 +191,10 @@ export async function POST(req: Request) {
   if (!event) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
+
+  const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "unknown";
+  const webhookRateLimit = await checkRateLimit(rateLimiters.stripeWebhook, ip);
+  if (!webhookRateLimit.success) return webhookRateLimit.response!;
 
   switch (event.type) {
     case "checkout.session.completed": {
@@ -367,6 +376,11 @@ export async function POST(req: Request) {
 
     case "customer.subscription.deleted": {
       const stripeSubscription = event.data.object as Stripe.Subscription;
+      const existing = await prisma.subscription.findFirst({
+        where: { stripeSubscriptionId: stripeSubscription.id },
+        include: { user: true },
+      });
+
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId: stripeSubscription.id },
         data: {
@@ -374,6 +388,15 @@ export async function POST(req: Request) {
           cancelAtPeriodEnd: false,
         },
       });
+
+      if (existing?.user?.email) {
+        const periodEnd = existing.currentPeriodEnd ?? new Date();
+        sendSubscriptionCancelledEmail(
+          existing.user.email,
+          existing.user.name ?? "there",
+          periodEnd
+        ).catch(console.error);
+      }
       break;
     }
 
@@ -383,6 +406,11 @@ export async function POST(req: Request) {
       const { currentPeriodStart, currentPeriodEnd } =
         resolveInvoicePeriods(invoice);
       if (stripeSubscriptionId) {
+        const existing = await prisma.subscription.findFirst({
+          where: { stripeSubscriptionId },
+          include: { user: true },
+        });
+
         await prisma.subscription.updateMany({
           where: { stripeSubscriptionId },
           data: {
@@ -391,6 +419,18 @@ export async function POST(req: Request) {
             currentPeriodEnd,
           },
         });
+
+        if (
+          existing?.user?.email &&
+          (existing.status === SubscriptionStatus.PAST_DUE ||
+            existing.status === SubscriptionStatus.CANCELLED)
+        ) {
+          sendSubscriptionReactivatedEmail(
+            existing.user.email,
+            existing.user.name ?? "there",
+            getTierNameFromEnum(existing.tier)
+          ).catch(console.error);
+        }
       }
       break;
     }

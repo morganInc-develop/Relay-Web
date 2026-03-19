@@ -1,5 +1,7 @@
 import { auth } from "@/lib/auth"
 import { applySeoFieldUpdate, ContentMutationError } from "@/lib/content-mutations"
+import { sendEmail } from "@/lib/email"
+import { contentUpdatedEmail } from "@/lib/email-templates"
 import { prisma } from "@/lib/prisma"
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
@@ -76,6 +78,12 @@ export async function PATCH(req: NextRequest) {
       field,
       value,
       stripePriceId: subscription?.stripePriceId,
+    })
+
+    await sendEmail({
+      to: process.env.AGENCY_EMAIL!,
+      subject: "Client updated SEO",
+      html: contentUpdatedEmail("Agency", field, page),
     })
 
     return NextResponse.json(result)
