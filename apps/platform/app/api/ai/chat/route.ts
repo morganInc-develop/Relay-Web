@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk"
+import * as Sentry from "@sentry/nextjs"
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
 import { NextRequest, NextResponse } from "next/server"
@@ -321,7 +322,8 @@ export async function POST(req: NextRequest) {
     }
 
     modelResult = parsed
-  } catch {
+  } catch (error) {
+    Sentry.captureException(error)
     await logFailedInteraction({
       userId: session.user.id,
       siteId: site.id,
@@ -369,8 +371,6 @@ export async function POST(req: NextRequest) {
         status: "PENDING",
       },
     })
-
-    await incrementUsage(session.user.id, day, month, monthlyUsed)
 
     return NextResponse.json({
       action: "out-of-scope",

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { encrypt } from "@/lib/encrypt"
+import { sendEmail } from "@/lib/email"
+import { subscriptionActivatedEmail } from "@/lib/email-templates"
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -11,7 +13,7 @@ export async function POST(req: NextRequest) {
 
   const site = await prisma.site.findFirst({
     where: { ownerId: session.user.id },
-    select: { id: true, domainVerified: true },
+    select: { id: true, domainVerified: true, r2Prefix: true },
   })
 
   if (!site) {
@@ -52,6 +54,7 @@ export async function POST(req: NextRequest) {
       payloadUrl,
       neonDatabaseUrl: encryptedDbUrl,
       vercelProjectId: vercelProjectId ?? null,
+      r2Prefix: site.r2Prefix ?? `sites/${site.id}`,
       linked: true,
       linkedAt: new Date(),
       status: "ACTIVE",
@@ -61,10 +64,35 @@ export async function POST(req: NextRequest) {
       repoUrl: true,
       payloadUrl: true,
       vercelProjectId: true,
+      r2Prefix: true,
       linked: true,
       linkedAt: true,
     },
   })
+
+  if (session.user.email) {
+    const subscription = await prisma.subscription.findUnique({
+      where: { userId: session.user.id },
+      select: { tier: true },
+    })
+
+    const tierName =
+      subscription?.tier === "TIER3"
+        ? "Pro"
+        : subscription?.tier === "TIER2"
+          ? "Growth"
+          : "Starter"
+
+    try {
+      await sendEmail({
+        to: session.user.email,
+        subject: "Your RelayWeb subscription is active",
+        html: subscriptionActivatedEmail(session.user.name ?? "there", tierName),
+      })
+    } catch (error) {
+      console.error("[SiteLink] Subscription activation email failed:", error)
+    }
+  }
 
   return NextResponse.json({ success: true, site: updated })
 }

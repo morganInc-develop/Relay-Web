@@ -3,6 +3,7 @@ import { applyTextFieldUpdate, ContentMutationError } from "@/lib/content-mutati
 import { sendEmail } from "@/lib/email"
 import { contentUpdatedEmail } from "@/lib/email-templates"
 import { prisma } from "@/lib/prisma"
+import * as Sentry from "@sentry/nextjs"
 import { Ratelimit } from "@upstash/ratelimit"
 import { Redis } from "@upstash/redis"
 import { NextRequest, NextResponse } from "next/server"
@@ -88,6 +89,7 @@ export async function PATCH(req: NextRequest) {
     if (error instanceof ContentMutationError) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
+    Sentry.captureException(error)
     return NextResponse.json({ error: "Failed to update field" }, { status: 500 })
   }
 

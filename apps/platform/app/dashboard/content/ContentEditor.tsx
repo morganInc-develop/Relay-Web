@@ -1,7 +1,7 @@
 "use client"
 
 import ScheduledPublish from "@/components/content/ScheduledPublish"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, Clock3, RotateCcw, Save } from "lucide-react"
 
 interface ContentEditorProps {
@@ -31,6 +31,10 @@ interface GetPageResponse {
 interface VersionsResponse {
   versions?: Record<string, FieldVersion[]>
   error?: string
+}
+
+interface SignedUrlResponse {
+  url?: string
 }
 
 type SeoApiField = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage"
@@ -65,6 +69,20 @@ const seoFieldMap: SeoFieldConfig[] = [
 
 type EditorTab = "text" | "seo"
 
+function isImageField(fieldKey: string): boolean {
+  return /image/i.test(fieldKey)
+}
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value)
+}
+
+function isR2Key(value: string): boolean {
+  if (isHttpUrl(value)) return false
+  if (value.includes(" ")) return false
+  return value.includes("/")
+}
+
 export default function ContentEditor({ siteId }: ContentEditorProps) {
   const [pages, setPages] = useState<PageOption[]>([])
   const [selectedPage, setSelectedPage] = useState("")
@@ -80,6 +98,8 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [historyOpenField, setHistoryOpenField] = useState<string | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
+  const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({})
+  const signedUrlCacheRef = useRef<Record<string, string>>({})
 
   const textFields = useMemo(
     () =>
@@ -91,6 +111,17 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
       ),
     [fields]
   )
+
+  const imageFieldEntries = useMemo(
+    () =>
+      Object.entries(fields)
+        .filter(([fieldKey, value]) => isImageField(fieldKey) && typeof value === "string")
+        .map(([fieldKey, value]) => [fieldKey, value.trim()] as const)
+        .filter(([, value]) => value.length > 0),
+    [fields]
+  )
+
+  const imageFieldSignature = useMemo(() => JSON.stringify(imageFieldEntries), [imageFieldEntries])
 
   const loadPage = async (slug: string) => {
     setLoadingPage(true)
@@ -149,6 +180,57 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
 
     void loadPages()
   }, [siteId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const resolvePreviewUrls = async () => {
+      const parsedEntries = JSON.parse(imageFieldSignature) as Array<[string, string]>
+      const nextPreviewUrls: Record<string, string> = {}
+
+      await Promise.all(
+        parsedEntries.map(async ([fieldKey, value]) => {
+          if (!value) return
+
+          if (isHttpUrl(value)) {
+            nextPreviewUrls[fieldKey] = value
+            return
+          }
+
+          if (!isR2Key(value)) return
+
+          const cached = signedUrlCacheRef.current[value]
+          if (cached) {
+            nextPreviewUrls[fieldKey] = cached
+            return
+          }
+
+          try {
+            const res = await fetch(`/api/images/signed-url?key=${encodeURIComponent(value)}`, {
+              cache: "no-store",
+            })
+            const data = (await res.json()) as SignedUrlResponse
+            if (res.ok && typeof data.url === "string") {
+              signedUrlCacheRef.current[value] = data.url
+              nextPreviewUrls[fieldKey] = data.url
+            }
+          } catch {
+            // Ignore preview fetch errors; field editing still works.
+          }
+        })
+      )
+
+      if (!cancelled) {
+        setImagePreviewUrls(nextPreviewUrls)
+      }
+    }
+
+    void resolvePreviewUrls()
+
+    return () => {
+      cancelled = true
+    }
+  }, [imageFieldSignature, selectedPage])
 
   const setFieldValue = (fieldKey: string, value: string) => {
     setFields((prev) => ({ ...prev, [fieldKey]: value }))
@@ -334,6 +416,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
               const fieldVersions = versions[fieldKey] ?? []
               const isSaving = savingField === fieldKey
               const isSaved = savedField === fieldKey
+              const previewUrl = imagePreviewUrls[fieldKey]
 
               return (
                 <div key={fieldKey} className="border border-gray-200 rounded-xl p-4 space-y-3">
@@ -359,6 +442,17 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                       onChange={(e) => setFieldValue(fieldKey, e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
+                  )}
+
+                  {previewUrl && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewUrl}
+                        alt={`${fieldKey} preview`}
+                        className="h-32 w-auto rounded-md object-cover"
+                      />
+                    </div>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -431,6 +525,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
               const isSaving = savingField === seoField.key
               const isSaved = savedField === seoField.key
               const overLimit = typeof seoField.max === "number" && value.length > seoField.max
+              const previewUrl = imagePreviewUrls[seoField.key]
 
               return (
                 <div key={seoField.key} className="border border-gray-200 rounded-xl p-4 space-y-3">
@@ -465,6 +560,17 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                       onChange={(e) => setFieldValue(seoField.key, e.target.value)}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
+                  )}
+
+                  {previewUrl && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewUrl}
+                        alt={`${seoField.label} preview`}
+                        className="h-32 w-auto rounded-md object-cover"
+                      />
+                    </div>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">

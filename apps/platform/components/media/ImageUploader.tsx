@@ -28,14 +28,14 @@ export default function ImageUploader({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
 
-  const { startUpload } = useUploadThing("siteImage", {
+  const { startUpload } = useUploadThing("imageUploader", {
     headers: {
       "x-site-id": siteId,
     },
-    onClientUploadComplete: (res: Array<{ url: string; name: string }> | undefined) => {
+    onClientUploadComplete: (res: Array<{ serverData?: { key?: string }; name: string }> | undefined) => {
       if (res?.[0]) {
         setStatus("success")
-        onUploadComplete(res[0].url, res[0].name)
+        onUploadComplete(res[0].serverData?.key ?? "", res[0].name)
       }
     },
     onUploadError: (error: Error) => {
@@ -51,9 +51,9 @@ export default function ImageUploader({
     if (!file) return
 
     // Client-side validation
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 4 * 1024 * 1024) {
       setStatus("error")
-      setErrorMessage("File must be under 10MB")
+      setErrorMessage("File must be under 4MB")
       return
     }
 
@@ -88,7 +88,7 @@ export default function ImageUploader({
         <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors">
           <Upload className="w-8 h-8 text-gray-400 mb-2" />
           <span className="text-sm text-gray-500">Click to upload or drag and drop</span>
-          <span className="text-xs text-gray-400 mt-1">PNG, JPG, WebP, GIF up to 10MB</span>
+          <span className="text-xs text-gray-400 mt-1">PNG, JPG, WebP, GIF up to 4MB</span>
           <input
             type="file"
             className="hidden"

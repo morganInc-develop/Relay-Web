@@ -1,99 +1,76 @@
-import { SubscriptionStatus, SubscriptionTier } from "@prisma/client";
-import { NextResponse } from "next/server";
+import { SubscriptionStatus, SubscriptionTier } from "@prisma/client"
+import { NextResponse } from "next/server"
 
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe";
+import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/prisma"
+import { stripe } from "@/lib/stripe"
 
-const PRICE_ID_BY_TIER: Record<number, string | undefined> = {
-  1: process.env.STRIPE_PRICE_ID_TIER1,
-  2: process.env.STRIPE_PRICE_ID_TIER2,
-  3: process.env.STRIPE_PRICE_ID_TIER3,
-};
+const PRICE_IDS = {
+  starter: process.env.STRIPE_PRICE_STARTER,
+  growth: process.env.STRIPE_PRICE_GROWTH,
+  pro: process.env.STRIPE_PRICE_PRO,
+} as const
 
-const PRISMA_TIER_BY_TIER: Record<number, SubscriptionTier> = {
-  1: SubscriptionTier.TIER1,
-  2: SubscriptionTier.TIER2,
-  3: SubscriptionTier.TIER3,
-};
+const TIER_BY_PRICE_ID: Record<string, SubscriptionTier> = {
+  ...(PRICE_IDS.starter ? { [PRICE_IDS.starter]: SubscriptionTier.TIER1 } : {}),
+  ...(PRICE_IDS.growth ? { [PRICE_IDS.growth]: SubscriptionTier.TIER2 } : {}),
+  ...(PRICE_IDS.pro ? { [PRICE_IDS.pro]: SubscriptionTier.TIER3 } : {}),
+}
 
 export async function POST(req: Request) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth()
+  if (!session?.user?.id || !session.user.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  if (!session.user.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = (await req.json()) as { priceId?: string }
+  const priceId = typeof body?.priceId === "string" ? body.priceId.trim() : ""
+  if (!priceId || !TIER_BY_PRICE_ID[priceId]) {
+    return NextResponse.json({ error: "Invalid priceId" }, { status: 400 })
   }
 
-  const body = (await req.json()) as { tier?: number };
-  const tier = Number(body?.tier);
-
-  if (![1, 2, 3].includes(tier)) {
-    return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
-  }
-
-  const priceId = PRICE_ID_BY_TIER[tier];
-  if (!priceId) {
-    throw new Error(`Missing Stripe price ID for tier ${tier}`);
-  }
-
-  const appUrl = process.env.NEXTAUTH_URL;
+  const appUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL
   if (!appUrl) {
-    throw new Error("NEXTAUTH_URL is not set");
+    return NextResponse.json({ error: "App URL not configured" }, { status: 500 })
   }
 
   const existingSubscription = await prisma.subscription.findUnique({
     where: { userId: session.user.id },
     select: { stripeCustomerId: true },
-  });
-
-  let stripeCustomerId = existingSubscription?.stripeCustomerId ?? null;
-
-  if (!stripeCustomerId) {
-    const customer = await stripe.customers.create({
-      email: session.user.email,
-      name: session.user.name ?? undefined,
-    });
-
-    stripeCustomerId = customer.id;
-  }
+  })
+  const stripeCustomerId = existingSubscription?.stripeCustomerId ?? null
 
   await prisma.subscription.upsert({
     where: { userId: session.user.id },
     create: {
       userId: session.user.id,
-      tier: PRISMA_TIER_BY_TIER[tier],
+      tier: TIER_BY_PRICE_ID[priceId],
       status: SubscriptionStatus.INACTIVE,
-      stripeCustomerId,
+      stripeCustomerId: stripeCustomerId ?? undefined,
       stripePriceId: priceId,
     },
     update: {
-      tier: PRISMA_TIER_BY_TIER[tier],
-      stripeCustomerId,
+      tier: TIER_BY_PRICE_ID[priceId],
+      stripeCustomerId: stripeCustomerId ?? undefined,
       stripePriceId: priceId,
     },
-  });
+  })
 
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
-    customer: stripeCustomerId,
+    ...(stripeCustomerId ? { customer: stripeCustomerId } : { customer_email: session.user.email }),
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl}/onboarding/success?session_id={CHECKOUT_SESSION_ID}`,
+    success_url: `${appUrl}/onboarding?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/onboarding`,
-    metadata: { userId: session.user.id, tier: String(tier) },
+    metadata: { userId: session.user.id },
     subscription_data: {
-      metadata: { userId: session.user.id, tier: String(tier) },
+      metadata: { userId: session.user.id },
     },
-    allow_promotion_codes: true,
-    billing_address_collection: "auto",
-  });
+  })
 
   if (!checkoutSession.url) {
-    throw new Error("Stripe checkout session did not return a URL");
+    return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 })
   }
 
-  return NextResponse.json({ url: checkoutSession.url });
+  return NextResponse.json({ url: checkoutSession.url })
 }

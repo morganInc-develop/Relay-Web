@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
@@ -35,6 +35,15 @@ function CheckoutPageInner() {
 
   const tier = searchParams.get("tier");
   const isValidTier = tier === "1" || tier === "2" || tier === "3";
+  const priceId = useMemo(() => {
+    const byTier: Record<string, string | undefined> = {
+      "1": process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER ?? process.env.STRIPE_PRICE_STARTER,
+      "2": process.env.NEXT_PUBLIC_STRIPE_PRICE_GROWTH ?? process.env.STRIPE_PRICE_GROWTH,
+      "3": process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO ?? process.env.STRIPE_PRICE_PRO,
+    };
+
+    return tier ? byTier[tier] : undefined;
+  }, [tier]);
 
   useEffect(() => {
     if (hasStartedRef.current) return;
@@ -60,10 +69,16 @@ function CheckoutPageInner() {
     const startCheckout = async () => {
       setIsLoading(true);
 
+      if (!priceId) {
+        setError("Missing Stripe price configuration");
+        setIsLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/stripe/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tier: parseInt(tier, 10) }),
+        body: JSON.stringify({ priceId }),
       });
 
       if (!res.ok) {
@@ -87,7 +102,7 @@ function CheckoutPageInner() {
       setError(err instanceof Error ? err.message : "Failed to start checkout");
       setIsLoading(false);
     });
-  }, [isValidTier, router, status, tier]);
+  }, [isValidTier, priceId, router, status, tier]);
 
   if (error) {
     return (

@@ -14,7 +14,7 @@ export function generateVerifyToken(): string {
  * This tag is what the platform pings to verify domain ownership
  */
 export function buildVerifyMetaTag(token: string): string {
-  return `<meta name="relayweb-verification" content="${token}" />`
+  return `<meta name="relay-verify" content="${token}" />`
 }
 
 /**
@@ -59,12 +59,13 @@ export async function checkDomainForMetaTag(
     const html = await response.text()
 
     // Check for the meta tag in the HTML
+    const safeToken = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     const metaTagPattern = new RegExp(
-      `<meta[^>]*name=["']relayweb-verification["'][^>]*content=["']${token}["'][^>]*>`,
+      `<meta[^>]*name=["']relay-verify["'][^>]*content=["']${safeToken}["'][^>]*>`,
       "i"
     )
     const altMetaTagPattern = new RegExp(
-      `<meta[^>]*content=["']${token}["'][^>]*name=["']relayweb-verification["'][^>]*>`,
+      `<meta[^>]*content=["']${safeToken}["'][^>]*name=["']relay-verify["'][^>]*>`,
       "i"
     )
 

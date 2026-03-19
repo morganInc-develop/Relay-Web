@@ -1,65 +1,21 @@
 import { NextRequest, NextResponse } from "next/server"
+
 import { auth } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
-import { Ratelimit } from "@upstash/ratelimit"
-import { Redis } from "@upstash/redis"
-import {
-  generateVerifyToken,
-  buildVerifyMetaTag,
-  checkDomainForMetaTag,
-  normalizeDomain,
-  isTokenExpired,
-} from "@/lib/domain-verification"
 import { sendEmail } from "@/lib/email"
 import { domainVerifiedEmail } from "@/lib/email-templates"
+import { checkDomainForMetaTag, buildVerifyMetaTag, generateVerifyToken, normalizeDomain } from "@/lib/domain-verification"
+import { prisma } from "@/lib/prisma"
+import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
 
-// Rate limiter — 5 attempts per hour per user
-const ratelimit = new Ratelimit({
-  redis: Redis.fromEnv(),
-  limiter: Ratelimit.slidingWindow(5, "1 h"),
-  analytics: false,
-  prefix: "relayweb:verify",
-})
+const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 
-export async function GET(req: NextRequest) {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+function nextTokenExpiry(): Date {
+  return new Date(Date.now() + TOKEN_TTL_MS)
+}
 
-  const { searchParams } = new URL(req.url)
-  const action = searchParams.get("action")
-
-  if (action === "status") {
-    const site = await prisma.site.findFirst({
-      where: { ownerId: session.user.id },
-      select: {
-        id: true,
-        domain: true,
-        domainVerified: true,
-        verifiedAt: true,
-        verifyToken: true,
-        status: true,
-        name: true,
-        repoUrl: true,
-        payloadUrl: true,
-        vercelProjectId: true,
-      },
-    })
-
-    if (!site) {
-      return NextResponse.json({ site: null })
-    }
-
-    return NextResponse.json({
-      site: {
-        ...site,
-        metaTag: site.verifyToken ? buildVerifyMetaTag(site.verifyToken) : null,
-      },
-    })
-  }
-
-  return NextResponse.json({ error: "Invalid action" }, { status: 400 })
+function isExpired(expiresAt: Date | null | undefined): boolean {
+  if (!expiresAt) return true
+  return expiresAt.getTime() <= Date.now()
 }
 
 export async function POST(req: NextRequest) {
@@ -68,187 +24,144 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // Apply rate limiting
-  const { success, limit, remaining, reset } = await ratelimit.limit(
-    `verify:${session.user.id}`
-  )
+  const rl = await checkRateLimit(rateLimiters.domainVerify, session.user.id)
+  if (!rl.success) return rl.response!
 
-  if (!success) {
+  const body = (await req.json()) as { domain?: string }
+  if (!body?.domain || typeof body.domain !== "string") {
+    return NextResponse.json({ error: "Domain is required" }, { status: 400 })
+  }
+
+  const normalizedDomain = normalizeDomain(body.domain)
+
+  const conflict = await prisma.site.findFirst({
+    where: {
+      domain: normalizedDomain,
+      domainVerified: true,
+      ownerId: { not: session.user.id },
+    },
+    select: { id: true },
+  })
+  if (conflict) {
     return NextResponse.json(
-      {
-        error: "Too many verification attempts. Try again in an hour.",
-        limit,
-        remaining,
-        reset,
-      },
-      { status: 429 }
+      { error: "This domain is already verified by another account." },
+      { status: 409 }
     )
   }
 
-  const body = await req.json()
-  const { action } = body
+  let site = await prisma.site.findFirst({
+    where: { ownerId: session.user.id },
+  })
 
-  // ACTION: generate — create a new verify token
-  if (action === "generate") {
-    const { domain, name } = body
-
-    if (!domain || typeof domain !== "string") {
-      return NextResponse.json(
-        { error: "Domain is required" },
-        { status: 400 }
-      )
-    }
-
-    const normalizedDomain = normalizeDomain(domain)
-
-    // Check if domain is already claimed by another user
-    const existingSite = await prisma.site.findFirst({
-      where: {
+  if (!site) {
+    const token = generateVerifyToken()
+    const expiresAt = nextTokenExpiry()
+    site = await prisma.site.create({
+      data: {
+        ownerId: session.user.id,
         domain: normalizedDomain,
-        domainVerified: true,
-        ownerId: { not: session.user.id },
+        name: normalizedDomain,
+        verifyToken: token,
+        verifyTokenExp: expiresAt,
+        domainVerified: false,
+        status: "PENDING",
       },
     })
-
-    if (existingSite) {
-      return NextResponse.json(
-        { error: "This domain is already verified by another account." },
-        { status: 409 }
-      )
-    }
-
+  } else if (site.domain !== normalizedDomain) {
     const token = generateVerifyToken()
-    const metaTag = buildVerifyMetaTag(token)
-
-    // Upsert-style behavior by owner (ownerId is not unique in current schema)
-    const existingOwnedSite = await prisma.site.findFirst({
-      where: { ownerId: session.user.id },
-      select: { id: true },
-    })
-
-    const site = existingOwnedSite
-      ? await prisma.site.update({
-          where: { id: existingOwnedSite.id },
-          data: {
-            domain: normalizedDomain,
-            name: name ?? normalizedDomain,
-            verifyToken: token,
-            domainVerified: false,
-            verifiedAt: null,
-          },
-        })
-      : await prisma.site.create({
-          data: {
-            ownerId: session.user.id,
-            domain: normalizedDomain,
-            name: name ?? normalizedDomain,
-            verifyToken: token,
-            domainVerified: false,
-            status: "PENDING",
-          },
-        })
-
-    return NextResponse.json({
-      success: true,
-      siteId: site.id,
-      domain: normalizedDomain,
-      token,
-      metaTag,
-      instructions: [
-        `Add the following meta tag inside the <head> of your site's main layout file:`,
-        metaTag,
-        `Then redeploy your site and click "Verify" in the dashboard.`,
-        `This token expires in 72 hours.`,
-      ],
-    })
-  }
-
-  // ACTION: check — ping the domain and verify the meta tag
-  if (action === "check") {
-    const site = await prisma.site.findFirst({
-      where: { ownerId: session.user.id },
-    })
-
-    if (!site) {
-      return NextResponse.json(
-        { error: "No site found. Generate a verification token first." },
-        { status: 404 }
-      )
-    }
-
-    if (!site.verifyToken || !site.domain) {
-      return NextResponse.json(
-        { error: "No verification token found. Generate one first." },
-        { status: 400 }
-      )
-    }
-
-    if (site.domainVerified) {
-      return NextResponse.json({
-        success: true,
-        verified: true,
-        message: "Domain is already verified.",
-        domain: site.domain,
-      })
-    }
-
-    // Check if token is expired
-    if (isTokenExpired(site.updatedAt)) {
-      return NextResponse.json(
-        {
-          error:
-            "Verification token has expired (72 hours). Generate a new token and add it to your site.",
-          expired: true,
-        },
-        { status: 410 }
-      )
-    }
-
-    // Ping the domain
-    const result = await checkDomainForMetaTag(site.domain, site.verifyToken)
-
-    if (!result.verified) {
-      return NextResponse.json(
-        {
-          success: false,
-          verified: false,
-          error: result.error,
-          domain: site.domain,
-        },
-        { status: 422 }
-      )
-    }
-
-    // Mark as verified in database
-    await prisma.site.update({
+    const expiresAt = nextTokenExpiry()
+    site = await prisma.site.update({
       where: { id: site.id },
       data: {
-        domainVerified: true,
-        verifiedAt: new Date(),
-        status: "ACTIVE",
+        domain: normalizedDomain,
+        name: site.name ?? normalizedDomain,
+        domainVerified: false,
+        verifiedAt: null,
+        verifyToken: token,
+        verifyTokenExp: expiresAt,
+        linked: false,
+        linkedAt: null,
       },
-    })
-
-    if (session.user.email) {
-      try {
-        await sendEmail({
-          to: session.user.email,
-          subject: `Domain verified — ${site.domain}`,
-          html: domainVerifiedEmail(site.domain),
-        })
-      } catch (e) {
-        console.error("[Verify] Domain verified email failed:", e)
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      verified: true,
-      message: "Domain verified successfully.",
-      domain: site.domain,
-      verifiedAt: new Date().toISOString(),
     })
   }
 
-  return NextResponse.json({ error: "Invalid action" }, { status: 400 })
+  if (!site.verifyToken || isExpired(site.verifyTokenExp)) {
+    const refreshedToken = generateVerifyToken()
+    const refreshedExpiry = nextTokenExpiry()
+
+    site = await prisma.site.update({
+      where: { id: site.id },
+      data: {
+        verifyToken: refreshedToken,
+        verifyTokenExp: refreshedExpiry,
+        domainVerified: false,
+        verifiedAt: null,
+      },
+    })
+
+    return NextResponse.json({
+      verified: false,
+      domain: site.domain,
+      token: refreshedToken,
+      metaTag: buildVerifyMetaTag(refreshedToken),
+      expiresAt: refreshedExpiry.toISOString(),
+      message:
+        "Your previous verification token expired after 72 hours. A new token has been generated.",
+      expired: true,
+    })
+  }
+
+  if (site.domainVerified) {
+    return NextResponse.json({
+      verified: true,
+      domain: site.domain,
+      verifiedAt: site.verifiedAt?.toISOString() ?? new Date().toISOString(),
+      message: "Domain is already verified.",
+    })
+  }
+
+  const verifyResult = await checkDomainForMetaTag(normalizedDomain, site.verifyToken)
+  if (!verifyResult.verified) {
+    return NextResponse.json({
+      verified: false,
+      domain: normalizedDomain,
+      token: site.verifyToken,
+      metaTag: buildVerifyMetaTag(site.verifyToken),
+      expiresAt: site.verifyTokenExp?.toISOString() ?? nextTokenExpiry().toISOString(),
+      message:
+        verifyResult.error ??
+        "Verification tag not found. Add the tag to your site <head>, redeploy, and try again.",
+    })
+  }
+
+  const verifiedAt = new Date()
+  await prisma.site.update({
+    where: { id: site.id },
+    data: {
+      domainVerified: true,
+      verifiedAt,
+      verifyToken: null,
+      verifyTokenExp: null,
+      status: "ACTIVE",
+    },
+  })
+
+  if (session.user.email) {
+    try {
+      await sendEmail({
+        to: session.user.email,
+        subject: `Domain verified — ${normalizedDomain}`,
+        html: domainVerifiedEmail(normalizedDomain),
+      })
+    } catch (error) {
+      console.error("[Verify] Domain verified email failed:", error)
+    }
+  }
+
+  return NextResponse.json({
+    verified: true,
+    domain: normalizedDomain,
+    verifiedAt: verifiedAt.toISOString(),
+    message: "Domain verified successfully.",
+  })
 }

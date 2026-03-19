@@ -42,21 +42,30 @@ export default function DomainVerification() {
     setIsActing(true)
     setActionError(null)
     try {
-      const res = await fetch("/api/verify/generate-token", {
+      const res = await fetch("/api/verify/domain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ domain: domain.trim() }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Failed to generate token")
-      const next: Extract<VerificationStatus, { status: "pending" }> = {
-        status: "pending",
-        domain: data.domain,
-        token: data.token,
-        expiresAt: data.expiresAt,
+      if (data.verified) {
+        setState({
+          status: "verified",
+          domain: data.domain,
+          verifiedAt: data.verifiedAt ?? new Date().toISOString(),
+        })
+      } else {
+        const next: Extract<VerificationStatus, { status: "pending" }> = {
+          status: "pending",
+          domain: data.domain,
+          token: data.token,
+          expiresAt: data.expiresAt,
+        }
+        savedPending.current = next
+        setState(next)
+        if (data.message) setActionError(String(data.message))
       }
-      savedPending.current = next
-      setState(next)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Something went wrong")
     } finally {
@@ -73,7 +82,7 @@ export default function DomainVerification() {
       const res = await fetch("/api/verify/domain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "check" }),
+        body: JSON.stringify({ domain: state.status === "pending" ? state.domain : domain }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? "Verification failed")
@@ -83,6 +92,16 @@ export default function DomainVerification() {
           domain: data.domain,
           verifiedAt: data.verifiedAt ?? new Date().toISOString(),
         })
+      } else {
+        const next: Extract<VerificationStatus, { status: "pending" }> = {
+          status: "pending",
+          domain: data.domain,
+          token: data.token,
+          expiresAt: data.expiresAt,
+        }
+        savedPending.current = next
+        setState(next)
+        setActionError(data.message ?? "Verification tag not found yet.")
       }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Something went wrong")
@@ -167,7 +186,7 @@ export default function DomainVerification() {
 
   // ── Pending ───────────────────────────────────────────────────────────────
   if (state.status === "pending") {
-    const metaTag = `<meta name="relayweb-verification" content="${state.token}" />`
+    const metaTag = `<meta name="relay-verify" content="${state.token}" />`
     return (
       <div className="space-y-4">
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">

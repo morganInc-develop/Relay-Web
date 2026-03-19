@@ -26,6 +26,43 @@ type StripeInvoiceWithSubscription = Stripe.Invoice & {
   period_end?: number;
 };
 
+const PRICE_ID_TO_TIER: Record<string, SubscriptionTier> = {
+  ...(process.env.STRIPE_PRICE_STARTER
+    ? { [process.env.STRIPE_PRICE_STARTER]: SubscriptionTier.TIER1 }
+    : {}),
+  ...(process.env.STRIPE_PRICE_GROWTH
+    ? { [process.env.STRIPE_PRICE_GROWTH]: SubscriptionTier.TIER2 }
+    : {}),
+  ...(process.env.STRIPE_PRICE_PRO
+    ? { [process.env.STRIPE_PRICE_PRO]: SubscriptionTier.TIER3 }
+    : {}),
+};
+
+function mapTierFromPriceId(priceId: string | null | undefined): SubscriptionTier | null {
+  if (!priceId) return null;
+  return PRICE_ID_TO_TIER[priceId] ?? null;
+}
+
+function mapTierFromMetadata(tier: string | null | undefined): SubscriptionTier | null {
+  if (!tier) return null;
+  const tierMap: Record<string, SubscriptionTier> = {
+    "1": SubscriptionTier.TIER1,
+    "2": SubscriptionTier.TIER2,
+    "3": SubscriptionTier.TIER3,
+    TIER1: SubscriptionTier.TIER1,
+    TIER2: SubscriptionTier.TIER2,
+    TIER3: SubscriptionTier.TIER3,
+  };
+  return tierMap[tier] ?? null;
+}
+
+function getTierDisplayName(priceId: string): string {
+  if (priceId === process.env.STRIPE_PRICE_STARTER) return "Starter";
+  if (priceId === process.env.STRIPE_PRICE_GROWTH) return "Growth";
+  if (priceId === process.env.STRIPE_PRICE_PRO) return "Pro";
+  return "your plan";
+}
+
 function normalizeSecret(value: string | undefined | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -154,11 +191,11 @@ export async function POST(req: Request) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const userId = session.metadata?.userId;
-      const tier = session.metadata?.tier;
-      const stripeSubscriptionId = session.subscription as string;
-      const stripeCustomerId = session.customer as string;
+      const stripeSubscriptionId =
+        typeof session.subscription === "string" ? session.subscription : null;
+      const stripeCustomerId = typeof session.customer === "string" ? session.customer : null;
 
-      if (!userId || !tier || !stripeSubscriptionId) {
+      if (!userId || !stripeSubscriptionId || !stripeCustomerId) {
         return NextResponse.json({ error: "Missing metadata" }, { status: 400 });
       }
 
@@ -167,19 +204,11 @@ export async function POST(req: Request) {
       )) as unknown as StripeSubscriptionWithPeriods;
       const { currentPeriodStart, currentPeriodEnd } =
         resolveSubscriptionPeriods(stripeSubscription);
-
-      const tierMap: Record<string, SubscriptionTier> = {
-        "1": SubscriptionTier.TIER1,
-        "2": SubscriptionTier.TIER2,
-        "3": SubscriptionTier.TIER3,
-        TIER1: SubscriptionTier.TIER1,
-        TIER2: SubscriptionTier.TIER2,
-        TIER3: SubscriptionTier.TIER3,
-      };
-      const subscriptionTier = tierMap[tier];
-      if (!subscriptionTier) {
-        return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
-      }
+      const stripePriceId = stripeSubscription.items.data[0]?.price.id ?? null;
+      const subscriptionTier =
+        mapTierFromPriceId(stripePriceId) ??
+        mapTierFromMetadata(session.metadata?.tier) ??
+        SubscriptionTier.TIER1;
 
       await prisma.subscription.upsert({
         where: { userId },
@@ -189,7 +218,7 @@ export async function POST(req: Request) {
           status: SubscriptionStatus.ACTIVE,
           stripeCustomerId,
           stripeSubscriptionId,
-          stripePriceId: stripeSubscription.items.data[0].price.id,
+          stripePriceId,
           currentPeriodStart,
           currentPeriodEnd,
           cancelAtPeriodEnd: false,
@@ -199,7 +228,7 @@ export async function POST(req: Request) {
           status: SubscriptionStatus.ACTIVE,
           stripeCustomerId,
           stripeSubscriptionId,
-          stripePriceId: stripeSubscription.items.data[0].price.id,
+          stripePriceId,
           currentPeriodStart,
           currentPeriodEnd,
           cancelAtPeriodEnd: false,
@@ -228,15 +257,7 @@ export async function POST(req: Request) {
       const { currentPeriodStart, currentPeriodEnd } =
         resolveSubscriptionPeriods(subscription);
       const stripePriceId = subscription.items.data[0]?.price.id ?? null;
-
-      const priceToTier: Record<string, SubscriptionTier> = {
-        [process.env.STRIPE_PRICE_STARTER ?? ""]: SubscriptionTier.TIER1,
-        [process.env.STRIPE_PRICE_GROWTH ?? ""]: SubscriptionTier.TIER2,
-        [process.env.STRIPE_PRICE_PRO ?? ""]: SubscriptionTier.TIER3,
-      };
-      const subscriptionTier = stripePriceId
-        ? priceToTier[stripePriceId]
-        : undefined;
+      const subscriptionTier = mapTierFromPriceId(stripePriceId);
 
       const updated = await prisma.subscription.updateMany({
         where: { stripeCustomerId: customer },
@@ -254,17 +275,9 @@ export async function POST(req: Request) {
       if (updated.count === 0) {
         const metadataUserId = subscription.metadata?.userId;
         if (metadataUserId) {
-          const tierByMetadata: Record<string, SubscriptionTier> = {
-            "1": SubscriptionTier.TIER1,
-            "2": SubscriptionTier.TIER2,
-            "3": SubscriptionTier.TIER3,
-            TIER1: SubscriptionTier.TIER1,
-            TIER2: SubscriptionTier.TIER2,
-            TIER3: SubscriptionTier.TIER3,
-          };
           const fallbackTier =
             subscriptionTier ??
-            tierByMetadata[subscription.metadata?.tier ?? ""] ??
+            mapTierFromMetadata(subscription.metadata?.tier) ??
             SubscriptionTier.TIER1;
 
           await prisma.subscription.upsert({
@@ -301,12 +314,7 @@ export async function POST(req: Request) {
 
       if (subscriptionRecord?.user?.email) {
         const priceId = subscription.items.data[0]?.price.id ?? "";
-        const tierMap: Record<string, string> = {
-          [process.env.STRIPE_PRICE_STARTER!]: "Starter",
-          [process.env.STRIPE_PRICE_GROWTH!]: "Growth",
-          [process.env.STRIPE_PRICE_PRO!]: "Pro",
-        };
-        const tierName = tierMap[priceId] ?? "your plan";
+        const tierName = getTierDisplayName(priceId);
 
         try {
           await sendEmail({
@@ -329,6 +337,8 @@ export async function POST(req: Request) {
       const stripeSubscription =
         event.data.object as StripeSubscriptionWithPeriods;
       const stripeSubscriptionId = stripeSubscription.id;
+      const stripePriceId = stripeSubscription.items.data[0]?.price.id ?? null;
+      const updatedTier = mapTierFromPriceId(stripePriceId);
       const { currentPeriodStart, currentPeriodEnd } =
         resolveSubscriptionPeriods(stripeSubscription);
 
@@ -344,6 +354,8 @@ export async function POST(req: Request) {
       await prisma.subscription.updateMany({
         where: { stripeSubscriptionId },
         data: {
+          ...(updatedTier ? { tier: updatedTier } : {}),
+          stripePriceId,
           status,
           currentPeriodStart,
           currentPeriodEnd,
