@@ -1,181 +1,185 @@
-import { auth } from "@/lib/auth"
+import { AIActionType } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
+
+import { auth } from "@/lib/auth"
 import {
-  getSiteForUser,
-  getUserSubscription,
-  tierAllows,
-  tierNotAllowedResponse,
-} from "@/lib/site-access"
-import { createAIAuditLog } from "@/lib/ai-audit-log"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
-import { updatePageInPayload, getPageFromPayload } from "@/lib/payload-client"
-import { triggerClientRebuild } from "@/lib/triggerClientRebuild"
-import { ChangeSource, SubscriptionStatus, AIActionType, SubscriptionTier } from "@prisma/client"
-import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
+  applySeoFieldUpdate,
+  applyTextFieldUpdate,
+  ContentMutationError,
+} from "@/lib/content-mutations"
+import { sendEmail } from "@/lib/email"
+import { aiChangeEmail } from "@/lib/email-templates"
+import { prisma } from "@/lib/prisma"
 
 interface ApplyBody {
-  siteId: string
-  pageId: string
-  pageSlug: string
-  fieldKey: string
-  newValue: string
-  userPrompt: string
+  logId?: string
 }
 
-interface PayloadPageDocument {
-  [key: string]: unknown
+interface ProposedAction {
+  action?: string
+  page?: string
+  field?: string
+  value?: string
+  reasoning?: string
 }
 
-interface PayloadPageDocsResponse {
-  docs?: PayloadPageDocument[]
-}
-
-function buildNestedPatch(path: string, value: string): Record<string, unknown> {
-  const keys = path.split(".")
-  const root: Record<string, unknown> = {}
-  let current: Record<string, unknown> = root
-
-  keys.forEach((key, index) => {
-    if (index === keys.length - 1) {
-      current[key] = value
-      return
-    }
-    const next: Record<string, unknown> = {}
-    current[key] = next
-    current = next
-  })
-
-  return root
-}
-
-function actionTypeForField(fieldKey: string): AIActionType {
-  if (fieldKey.startsWith("meta.")) return AIActionType.SEO_UPDATE
-  return AIActionType.CONTENT_UPDATE
-}
+const VALID_ACTIONS = new Set(["update-text", "update-seo"])
 
 export async function POST(req: NextRequest) {
-  // 1. Auth check
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // 2. Parse body
   let body: ApplyBody
   try {
-    body = await req.json()
+    body = (await req.json()) as ApplyBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { siteId, pageId, pageSlug, fieldKey, newValue, userPrompt } = body
-  if (!siteId || !pageId || !pageSlug || !fieldKey || newValue === undefined) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+  if (!body.logId) {
+    return NextResponse.json({ error: "logId is required" }, { status: 400 })
   }
 
-  // 2. Site ownership check
-  const { site, response: accessError } = await getSiteForUser(siteId, session.user.id)
-  if (accessError) return accessError
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  const chatLog = await prisma.aiChatLog.findUnique({
+    where: { id: body.logId },
+    include: {
+      site: {
+        select: {
+          id: true,
+          ownerId: true,
+          payloadUrl: true,
+          repoUrl: true,
+          domainVerified: true,
+          linked: true,
+        },
+      },
+    },
+  })
 
-  // 3. Tier check
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
+  if (!chatLog) {
+    return NextResponse.json({ error: "Log not found" }, { status: 404 })
+  }
+
+  if (chatLog.userId !== session.user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  if (chatLog.status !== "PENDING") {
+    return NextResponse.json({ error: "Log already processed" }, { status: 409 })
+  }
+
+  let proposal: ProposedAction
+  try {
+    proposal = chatLog.proposedAction ? (JSON.parse(chatLog.proposedAction) as ProposedAction) : {}
+  } catch {
+    return NextResponse.json({ error: "Invalid proposed action" }, { status: 400 })
+  }
+
+  const action = typeof proposal.action === "string" ? proposal.action : ""
+  const page = typeof proposal.page === "string" ? proposal.page.trim() : ""
+  const field = typeof proposal.field === "string" ? proposal.field.trim() : ""
+  const value = typeof proposal.value === "string" ? proposal.value : ""
+
+  if (!VALID_ACTIONS.has(action)) {
+    return NextResponse.json({ error: "Invalid proposed action" }, { status: 400 })
+  }
+
+  if (!page || !field || !value) {
+    return NextResponse.json({ error: "Invalid proposed action" }, { status: 400 })
+  }
+
+  if (!chatLog.site.domainVerified || !chatLog.site.linked) {
+    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+  }
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { status: true, stripePriceId: true },
+  })
+
+  if (!subscription || subscription.status !== "ACTIVE") {
     return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
   }
-  if (!tierAllows(subscription.tier, SubscriptionTier.TIER1)) {
-    return tierNotAllowedResponse("AI apply")
-  }
 
-  // 4. Rate limit check
-  if (subscription.tier === SubscriptionTier.TIER1) {
-    const rateLimit = await checkRateLimit(rateLimiters.aiTier1, `${session.user.id}:apply`)
-    if (!rateLimit.success) return rateLimit.response!
-  } else if (subscription.tier === SubscriptionTier.TIER2) {
-    const rateLimit = await checkRateLimit(rateLimiters.aiTier2, `${session.user.id}:apply`)
-    if (!rateLimit.success) return rateLimit.response!
-  }
-
-  // Fetch current value for snapshot
-  let previousValue = ""
+  let fieldBefore = ""
   try {
-    const { data: pageData } = await getPageFromPayload(site, pageSlug)
-    const page = (pageData as PayloadPageDocsResponse | null)?.docs?.[0]
-    if (page) {
-      const parts = fieldKey.split(".")
-      let value: unknown = page
-      for (const part of parts) {
-        value = (value as Record<string, unknown>)?.[part]
-      }
-      previousValue = String(value ?? "")
+    if (action === "update-seo") {
+      const result = await applySeoFieldUpdate({
+        site: chatLog.site,
+        page,
+        field,
+        value,
+        stripePriceId: subscription.stripePriceId,
+      })
+      fieldBefore = result.oldValue
+    } else {
+      const result = await applyTextFieldUpdate({
+        site: chatLog.site,
+        page,
+        field,
+        value,
+        stripePriceId: subscription.stripePriceId,
+      })
+      fieldBefore = result.oldValue
     }
-  } catch {
-    // Continue — snapshot will have empty previousValue
+  } catch (error) {
+    const status = error instanceof ContentMutationError ? error.status : 500
+    const message = error instanceof ContentMutationError ? error.message : "Failed to apply action"
+
+    await prisma.aiChatLog.update({
+      where: { id: chatLog.id },
+      data: { status: "FAILED" },
+    })
+
+    return NextResponse.json({ error: message }, { status })
   }
 
-  // Save version snapshot BEFORE applying
-  await createVersionSnapshot({
-    siteId,
-    pageSlug,
-    fieldKey,
-    previousValue,
-    newValue,
-    changedBy: session.user.id,
-    source: ChangeSource.AI,
-    maxVersions: getMaxVersions(subscription.tier),
+  await prisma.aiChatLog.update({
+    where: { id: chatLog.id },
+    data: {
+      status: "APPLIED",
+      fieldBefore,
+      fieldAfter: value,
+    },
   })
 
-  // Apply change to Payload
-  const updateData = buildNestedPatch(fieldKey, newValue)
-  const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
-    site,
-    pageId,
-    updateData
-  )
-
-  if (payloadError) {
-    // Log failed application
-    await createAIAuditLog({
-      siteId,
+  await prisma.aIAuditLog.create({
+    data: {
+      siteId: chatLog.site.id,
       userId: session.user.id,
-      actionType: actionTypeForField(fieldKey),
-      pageSlug,
-      fieldKey,
-      previousValue,
-      newValue,
-      userPrompt,
-      aiResponse: "Applied by user confirmation",
-      wasApplied: false,
-      wasRejected: true,
-    })
-    return NextResponse.json({ error: payloadError }, { status: payloadStatus })
-  }
-
-  // Log successful application
-  await createAIAuditLog({
-    siteId,
-    userId: session.user.id,
-    actionType: actionTypeForField(fieldKey),
-    pageSlug,
-    fieldKey,
-    previousValue,
-    newValue,
-    userPrompt,
-    aiResponse: "Applied by user confirmation",
-    wasApplied: true,
-    wasRejected: false,
+      actionType: action === "update-seo" ? AIActionType.SEO_UPDATE : AIActionType.CONTENT_UPDATE,
+      pageSlug: page,
+      fieldKey: field,
+      previousValue: fieldBefore,
+      newValue: value,
+      userPrompt: chatLog.message,
+      aiResponse: chatLog.proposedAction,
+      wasApplied: true,
+      wasRejected: false,
+      prompt: chatLog.message,
+      routeCalled: "/api/ai/apply",
+      beforeValue: fieldBefore,
+      afterValue: value,
+      success: true,
+      errorMessage: null,
+    },
   })
 
-  // Trigger rebuild
-  if (site.payloadUrl) {
-    await triggerClientRebuild({
-      siteRebuildUrl: site.payloadUrl,
-      webhookSecret: process.env.RELAYWEB_CLIENT_WEBHOOK_SECRET ?? "",
-      source: "platform-ai-apply",
-      pageSlug,
-      triggeredBy: session.user.id,
+  const agencyOwner = await prisma.user.findUnique({
+    where: { id: chatLog.site.ownerId },
+    select: { email: true },
+  })
+
+  const recipient = agencyOwner?.email ?? process.env.AGENCY_EMAIL
+  if (recipient) {
+    await sendEmail({
+      to: recipient,
+      subject: `AI made a change — ${field} on ${page}`,
+      html: aiChangeEmail(field, page, fieldBefore, value),
     })
   }
 
-  return NextResponse.json({ success: true, fieldKey, newValue })
+  return NextResponse.json({ success: true, fieldAfter: value })
 }

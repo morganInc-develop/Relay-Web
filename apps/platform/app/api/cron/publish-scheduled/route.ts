@@ -1,124 +1,234 @@
-import { scheduledPublishEmail } from "@/lib/email-templates"
 import { sendEmail } from "@/lib/email"
-import { getPageFromPayload, updatePageInPayload } from "@/lib/payload-client"
+import { scheduledPublishEmail } from "@/lib/email-templates"
 import { prisma } from "@/lib/prisma"
 import { triggerRebuild } from "@/lib/rebuild"
-import { PublishStatus } from "@prisma/client"
+import { getVersionLimit } from "@/lib/version-limit"
 import { NextRequest, NextResponse } from "next/server"
 
-function buildNestedPatch(path: string, value: string): Record<string, unknown> {
-  const keys = path.split(".")
-  const root: Record<string, unknown> = {}
-  let current: Record<string, unknown> = root
+type SeoField = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage"
 
-  keys.forEach((key, index) => {
-    if (index === keys.length - 1) {
-      current[key] = value
+interface PayloadPageResponse {
+  docs?: Array<Record<string, unknown>>
+}
+
+const seoFields: SeoField[] = [
+  "metaTitle",
+  "metaDescription",
+  "ogTitle",
+  "ogDescription",
+  "ogImage",
+]
+
+function isSeoField(field: string): field is SeoField {
+  return seoFields.includes(field as SeoField)
+}
+
+function getSeoPath(field: SeoField): string[] {
+  switch (field) {
+    case "metaTitle":
+      return ["meta", "title"]
+    case "metaDescription":
+      return ["meta", "description"]
+    case "ogTitle":
+      return ["openGraph", "title"]
+    case "ogDescription":
+      return ["openGraph", "description"]
+    case "ogImage":
+      return ["openGraph", "url"]
+  }
+}
+
+function buildNestedPatch(path: string[], value: string): Record<string, unknown> {
+  const root: Record<string, unknown> = {}
+  let cursor = root
+
+  path.forEach((segment, index) => {
+    if (index === path.length - 1) {
+      cursor[segment] = value
       return
     }
 
     const next: Record<string, unknown> = {}
-    current[key] = next
-    current = next
+    cursor[segment] = next
+    cursor = next
   })
 
   return root
 }
 
+function getNestedValue(value: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = value
+
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+
+  return current
+}
+
 export async function GET(req: NextRequest) {
   const expectedSecret = process.env.CRON_SECRET
   const authHeader = req.headers.get("authorization")
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : ""
 
-  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+  if (!expectedSecret || token !== expectedSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   const dueChanges = await prisma.scheduledChange.findMany({
     where: {
-      status: PublishStatus.SCHEDULED,
+      status: "SCHEDULED",
       publishAt: { lte: new Date() },
     },
     include: {
-      site: true,
+      site: {
+        select: {
+          id: true,
+          repoUrl: true,
+          payloadUrl: true,
+          ownerId: true,
+        },
+      },
     },
-    orderBy: {
-      publishAt: "asc",
-    },
+    orderBy: { publishAt: "asc" },
   })
 
-  let published = 0
+  let successCount = 0
+  let failCount = 0
 
-  for (const scheduledChange of dueChanges) {
+  for (const record of dueChanges) {
     try {
-      const { data: pageData, error: pageError } = await getPageFromPayload(
-        scheduledChange.site,
-        scheduledChange.page
-      )
-
-      if (pageError) {
-        console.error(`[Cron] Failed to load page ${scheduledChange.page}:`, pageError)
-        continue
+      if (!record.site.payloadUrl) {
+        throw new Error("Missing payloadUrl")
       }
 
-      const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
+      const pageResponse = await fetch(
+        `${record.site.payloadUrl}/api/pages?where[slug][equals]=${encodeURIComponent(record.page)}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        }
+      )
+
+      if (!pageResponse.ok) {
+        throw new Error(`Failed to fetch page (${pageResponse.status})`)
+      }
+
+      const pageData = (await pageResponse.json()) as PayloadPageResponse
+      const pageDoc = pageData.docs?.[0]
+
       if (!pageDoc || typeof pageDoc.id !== "string") {
-        console.error(`[Cron] Page not found for scheduled change ${scheduledChange.id}`)
-        continue
+        throw new Error("Page not found")
       }
 
-      const updateData = buildNestedPatch(scheduledChange.field, scheduledChange.newValue)
-      const { error: updateError } = await updatePageInPayload(
-        scheduledChange.site,
-        pageDoc.id,
-        updateData
-      )
+      const oldValue = isSeoField(record.field)
+        ? String(getNestedValue(pageDoc, getSeoPath(record.field)) ?? "")
+        : String(pageDoc[record.field] ?? "")
 
-      if (updateError) {
-        console.error(`[Cron] Failed to apply scheduled change ${scheduledChange.id}:`, updateError)
-        continue
+      const patchPayload = isSeoField(record.field)
+        ? buildNestedPatch(getSeoPath(record.field), record.value)
+        : { [record.field]: record.value }
+
+      const patchResponse = await fetch(`${record.site.payloadUrl}/api/pages/${pageDoc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patchPayload),
+      })
+
+      if (!patchResponse.ok) {
+        throw new Error(`Failed to patch page (${patchResponse.status})`)
       }
 
-      await triggerRebuild(scheduledChange.site.repoUrl ?? "", {
-        source: "platform-scheduled-publish",
-        page: scheduledChange.page,
-        field: scheduledChange.field,
-        scheduledChangeId: scheduledChange.id,
+      const subscription = await prisma.subscription.findUnique({
+        where: { userId: record.site.ownerId },
+        select: { stripePriceId: true },
+      })
+      const limit = getVersionLimit(subscription?.stripePriceId)
+
+      const count = await prisma.contentVersion.count({
+        where: {
+          siteId: record.site.id,
+          page: record.page,
+          field: record.field,
+        },
+      })
+
+      if (count >= limit) {
+        const oldest = await prisma.contentVersion.findFirst({
+          where: {
+            siteId: record.site.id,
+            page: record.page,
+            field: record.field,
+          },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        })
+
+        if (oldest) {
+          await prisma.contentVersion.deleteMany({
+            where: { id: oldest.id },
+          })
+        }
+      }
+
+      await prisma.contentVersion.create({
+        data: {
+          siteId: record.site.id,
+          page: record.page,
+          field: record.field,
+          oldValue,
+          newValue: record.value,
+        },
+      })
+
+      await triggerRebuild(`${record.site.repoUrl ?? ""}/dispatches`, {
+        source: "cron",
+        page: record.page,
+        field: record.field,
       })
 
       const owner = await prisma.user.findUnique({
-        where: { id: scheduledChange.site.ownerId },
+        where: { id: record.site.ownerId },
         select: { email: true, name: true },
       })
 
       if (owner?.email) {
-        try {
-          await sendEmail({
-            to: owner.email,
-            subject: `Your scheduled update to ${scheduledChange.field} on ${scheduledChange.page} is now live`,
-            html: scheduledPublishEmail(
-              owner.name ?? "there",
-              scheduledChange.field,
-              scheduledChange.page
-            ),
-          })
-        } catch (error) {
-          console.error("[Cron] Scheduled publish email failed:", error)
-        }
+        await sendEmail({
+          to: owner.email,
+          subject: `Your scheduled update to ${record.field} on ${record.page} is now live`,
+          html: scheduledPublishEmail(owner.name ?? "there", record.field, record.page),
+        })
       }
 
       await prisma.scheduledChange.update({
-        where: { id: scheduledChange.id },
+        where: { id: record.id },
         data: {
-          status: PublishStatus.PUBLISHED,
+          status: "PUBLISHED",
           publishedAt: new Date(),
         },
       })
 
-      published += 1
+      successCount += 1
     } catch (error) {
-      console.error(`[Cron] Failed to publish scheduled change ${scheduledChange.id}:`, error)
+      console.error(`[cron] Failed to publish scheduled change ${record.id}:`, error)
+      failCount += 1
+
+      try {
+        await prisma.scheduledChange.update({
+          where: { id: record.id },
+          data: { status: "DISCARDED" },
+        })
+      } catch (updateError) {
+        console.error(`[cron] Failed to mark scheduled change ${record.id} as discarded:`, updateError)
+      }
     }
   }
 
-  return NextResponse.json({ published })
+  if (failCount > 0) {
+    console.error(`[cron] Published ${successCount}, discarded ${failCount}`)
+  }
+
+  return NextResponse.json({ published: successCount })
 }

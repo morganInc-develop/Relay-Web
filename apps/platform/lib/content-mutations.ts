@@ -1,15 +1,40 @@
-import { getPageFromPayload, updatePageInPayload } from "@/lib/payload-client"
 import { prisma } from "@/lib/prisma"
 import { triggerRebuild } from "@/lib/rebuild"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
-import { ChangeSource, Site, SubscriptionTier } from "@prisma/client"
+import { getVersionLimit } from "@/lib/version-limit"
 
-export type SeoField =
-  | "metaTitle"
-  | "metaDescription"
-  | "ogTitle"
-  | "ogDescription"
-  | "ogImage"
+export type SeoField = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage"
+export type TextField = "heading" | "subheading" | "body" | "buttonText" | "ctaText"
+
+interface SiteMutationContext {
+  id: string
+  payloadUrl: string | null
+  repoUrl: string | null
+}
+
+interface PayloadPageResponse {
+  docs?: Array<Record<string, unknown>>
+}
+
+const SEO_FIELD_PATHS: Record<SeoField, string[]> = {
+  metaTitle: ["meta", "title"],
+  metaDescription: ["meta", "description"],
+  ogTitle: ["openGraph", "title"],
+  ogDescription: ["openGraph", "description"],
+  ogImage: ["openGraph", "url"],
+}
+
+const TEXT_FIELDS = new Set<TextField>([
+  "heading",
+  "subheading",
+  "body",
+  "buttonText",
+  "ctaText",
+])
+
+function isTextField(field: string): boolean {
+  if (TEXT_FIELDS.has(field as TextField)) return true
+  return field.trim().length > 0 && !isSeoField(field)
+}
 
 export class ContentMutationError extends Error {
   status: number
@@ -21,123 +46,258 @@ export class ContentMutationError extends Error {
   }
 }
 
-const SEO_FIELD_MAP: Record<SeoField, string> = {
-  metaTitle: "meta.title",
-  metaDescription: "meta.description",
-  ogTitle: "meta.ogTitle",
-  ogDescription: "meta.ogDescription",
-  ogImage: "meta.ogImage",
+function isSeoField(field: string): field is SeoField {
+  return field in SEO_FIELD_PATHS
 }
 
-function buildNestedPatch(path: string, value: string): Record<string, unknown> {
-  const keys = path.split(".")
-  const root: Record<string, unknown> = {}
-  let current: Record<string, unknown> = root
+function getNestedValue(value: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = value
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
+}
 
-  keys.forEach((key, index) => {
-    if (index === keys.length - 1) {
-      current[key] = value
+function buildNestedPatch(path: string[], value: string): Record<string, unknown> {
+  const root: Record<string, unknown> = {}
+  let cursor = root
+
+  path.forEach((segment, index) => {
+    if (index === path.length - 1) {
+      cursor[segment] = value
       return
     }
 
     const next: Record<string, unknown> = {}
-    current[key] = next
-    current = next
+    cursor[segment] = next
+    cursor = next
   })
 
   return root
 }
 
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split(".")
-  let value: unknown = obj
-
-  for (const key of keys) {
-    if (!value || typeof value !== "object") return undefined
-    value = (value as Record<string, unknown>)[key]
-  }
-
-  return value
+interface ApplySeoFieldUpdateArgs {
+  site: SiteMutationContext
+  page: string
+  field: string
+  value: string
+  stripePriceId: string | null | undefined
 }
 
-interface ApplySeoFieldUpdateArgs {
-  site: Site
+interface ApplyTextFieldUpdateArgs {
+  site: SiteMutationContext
   page: string
-  field: SeoField
+  field: string
   value: string
-  userId: string
-  subscriptionTier: SubscriptionTier
+  stripePriceId: string | null | undefined
 }
 
 export async function applySeoFieldUpdate({
   site,
-  page: pageSlug,
+  page,
   field,
   value,
-  userId,
-  subscriptionTier,
-}: ApplySeoFieldUpdateArgs): Promise<{ success: true; versionsRemaining: number }> {
-  const fieldKey = SEO_FIELD_MAP[field]
-  if (!fieldKey) {
-    throw new ContentMutationError("Invalid SEO field", 400)
+  stripePriceId,
+}: ApplySeoFieldUpdateArgs): Promise<{ success: true; versionsRemaining: number; oldValue: string }> {
+  if (!isSeoField(field)) {
+    throw new ContentMutationError(`Invalid SEO field: ${field}`, 400)
   }
 
-  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(
-    site,
-    pageSlug
-  )
-  if (pageError) {
-    throw new ContentMutationError(pageError, pageStatus)
+  if (!site.payloadUrl) {
+    throw new ContentMutationError("Payload fetch failed", 502)
   }
 
-  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
+  const limit = getVersionLimit(stripePriceId)
+  const count = await prisma.contentVersion.count({
+    where: {
+      siteId: site.id,
+      page,
+      field,
+    },
+  })
+
+  if (count >= limit) {
+    const oldest = await prisma.contentVersion.findFirst({
+      where: {
+        siteId: site.id,
+        page,
+        field,
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    })
+
+    if (oldest) {
+      await prisma.contentVersion.deleteMany({ where: { id: oldest.id } })
+    }
+  }
+
+  let pageDoc: Record<string, unknown> | undefined
+  try {
+    const pageResponse = await fetch(
+      `${site.payloadUrl}/api/pages?where[slug][equals]=${encodeURIComponent(page)}`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      }
+    )
+
+    if (!pageResponse.ok) {
+      throw new ContentMutationError("Payload fetch failed", 502)
+    }
+
+    const pageData = (await pageResponse.json()) as PayloadPageResponse
+    pageDoc = pageData.docs?.[0]
+  } catch (error) {
+    if (error instanceof ContentMutationError) throw error
+    throw new ContentMutationError("Payload fetch failed", 502)
+  }
+
   if (!pageDoc || typeof pageDoc.id !== "string") {
     throw new ContentMutationError("Page not found", 404)
   }
 
-  const previousValue = String(getNestedValue(pageDoc, fieldKey) ?? "")
-  const maxVersions = getMaxVersions(subscriptionTier)
-  const resolvedPageSlug =
-    typeof pageDoc.slug === "string" && pageDoc.slug.length > 0 ? pageDoc.slug : pageSlug
-
-  await createVersionSnapshot({
-    siteId: site.id,
-    pageSlug: resolvedPageSlug,
-    fieldKey,
-    previousValue,
-    newValue: value,
-    changedBy: userId,
-    source: ChangeSource.MANUAL,
-    maxVersions,
+  const oldValue = String(getNestedValue(pageDoc, SEO_FIELD_PATHS[field]) ?? "")
+  await prisma.contentVersion.create({
+    data: {
+      siteId: site.id,
+      page,
+      field,
+      oldValue,
+      newValue: value,
+    },
   })
 
-  const updateData = buildNestedPatch(fieldKey, value)
-  const { error: updateError, status: updateStatus } = await updatePageInPayload(
-    site,
-    pageDoc.id,
-    updateData
-  )
-  if (updateError) {
-    throw new ContentMutationError(updateError, updateStatus)
+  const patchPayload = buildNestedPatch(SEO_FIELD_PATHS[field], value)
+  try {
+    const patchResponse = await fetch(`${site.payloadUrl}/api/pages/${pageDoc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patchPayload),
+    })
+
+    if (!patchResponse.ok) {
+      throw new ContentMutationError("Payload fetch failed", 502)
+    }
+  } catch (error) {
+    if (error instanceof ContentMutationError) throw error
+    throw new ContentMutationError("Payload fetch failed", 502)
   }
 
-  await triggerRebuild(site.repoUrl ?? "", {
-    source: "platform-seo-update",
-    page: resolvedPageSlug,
-    field,
-    triggeredBy: userId,
-  })
-
-  const versionCount = await prisma.versionSnapshot.count({
-    where: {
-      siteId: site.id,
-      pageSlug: resolvedPageSlug,
-      fieldKey,
-    },
+  await triggerRebuild(`${site.repoUrl ?? ""}/dispatches`, {
+    event_type: "seo-update",
+    client_payload: { page, field },
   })
 
   return {
     success: true,
-    versionsRemaining: Math.max(maxVersions - versionCount, 0),
+    versionsRemaining: limit - (count >= limit ? limit : count + 1),
+    oldValue,
+  }
+}
+
+export async function applyTextFieldUpdate({
+  site,
+  page,
+  field,
+  value,
+  stripePriceId,
+}: ApplyTextFieldUpdateArgs): Promise<{ success: true; versionsRemaining: number; oldValue: string }> {
+  if (!isTextField(field)) {
+    throw new ContentMutationError(`Invalid text field: ${field}`, 400)
+  }
+
+  if (!site.payloadUrl) {
+    throw new ContentMutationError("Payload fetch failed", 502)
+  }
+
+  const limit = getVersionLimit(stripePriceId)
+  const count = await prisma.contentVersion.count({
+    where: {
+      siteId: site.id,
+      page,
+      field,
+    },
+  })
+
+  if (count >= limit) {
+    const oldest = await prisma.contentVersion.findFirst({
+      where: {
+        siteId: site.id,
+        page,
+        field,
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    })
+
+    if (oldest) {
+      await prisma.contentVersion.deleteMany({ where: { id: oldest.id } })
+    }
+  }
+
+  let pageDoc: Record<string, unknown> | undefined
+  try {
+    const pageResponse = await fetch(
+      `${site.payloadUrl}/api/pages?where[slug][equals]=${encodeURIComponent(page)}`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      }
+    )
+
+    if (!pageResponse.ok) {
+      throw new ContentMutationError("Payload fetch failed", 502)
+    }
+
+    const pageData = (await pageResponse.json()) as PayloadPageResponse
+    pageDoc = pageData.docs?.[0]
+  } catch (error) {
+    if (error instanceof ContentMutationError) throw error
+    throw new ContentMutationError("Payload fetch failed", 502)
+  }
+
+  if (!pageDoc || typeof pageDoc.id !== "string") {
+    throw new ContentMutationError("Page not found", 404)
+  }
+
+  const oldValue = String(pageDoc[field] ?? "")
+  await prisma.contentVersion.create({
+    data: {
+      siteId: site.id,
+      page,
+      field,
+      oldValue,
+      newValue: value,
+    },
+  })
+
+  try {
+    const patchResponse = await fetch(`${site.payloadUrl}/api/pages/${pageDoc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    })
+
+    if (!patchResponse.ok) {
+      throw new ContentMutationError("Payload fetch failed", 502)
+    }
+  } catch (error) {
+    if (error instanceof ContentMutationError) throw error
+    throw new ContentMutationError("Payload fetch failed", 502)
+  }
+
+  await triggerRebuild(`${site.repoUrl ?? ""}/dispatches`, {
+    event_type: "content-update",
+    client_payload: { page, field },
+  })
+
+  return {
+    success: true,
+    versionsRemaining: limit - (count >= limit ? limit : count + 1),
+    oldValue,
   }
 }

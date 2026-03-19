@@ -1,39 +1,44 @@
 import { auth } from "@/lib/auth"
-import {
-  applySeoFieldUpdate,
-  ContentMutationError,
-  SeoField,
-} from "@/lib/content-mutations"
-import { getPageFromPayload } from "@/lib/payload-client"
+import { applySeoFieldUpdate } from "@/lib/content-mutations"
 import { prisma } from "@/lib/prisma"
-import { getUserSubscription, tierNotAllowedResponse } from "@/lib/site-access"
+import { getScanLimit } from "@/lib/seo-limits"
 import Anthropic from "@anthropic-ai/sdk"
-import { SubscriptionStatus, SubscriptionTier } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
+type SeoField = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage"
 
 interface AutoFixBody {
-  page: string
-  recommendations: string[]
-  currentFields?: Partial<Record<SeoField, string>>
+  page?: string
+  recommendations?: unknown
+  currentFields?: unknown
 }
 
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split(".")
-  let value: unknown = obj
+interface PayloadPageResponse {
+  docs?: Array<Record<string, unknown>>
+}
 
-  for (const key of keys) {
-    if (!value || typeof value !== "object") return undefined
-    value = (value as Record<string, unknown>)[key]
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+const seoFields: SeoField[] = [
+  "metaTitle",
+  "metaDescription",
+  "ogTitle",
+  "ogDescription",
+  "ogImage",
+]
+
+function getNestedValue(value: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = value
+
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return undefined
+    current = (current as Record<string, unknown>)[segment]
   }
 
-  return value
+  return current
 }
 
-function sanitizeJsonBlock(text: string): string {
+function sanitizeJson(text: string): string {
   return text
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
@@ -41,18 +46,42 @@ function sanitizeJsonBlock(text: string): string {
     .trim()
 }
 
-function toGeneratedFields(input: unknown): Partial<Record<SeoField, string>> {
-  if (!input || typeof input !== "object") return {}
-  const raw = input as Record<string, unknown>
-  const fields: SeoField[] = ["metaTitle", "metaDescription", "ogTitle", "ogDescription", "ogImage"]
-  const output: Partial<Record<SeoField, string>> = {}
+function toCurrentFields(value: unknown): Record<SeoField, string> | null {
+  if (!value || typeof value !== "object") return null
 
-  for (const field of fields) {
-    const value = raw[field]
-    if (typeof value === "string") output[field] = value
+  const fields = value as Record<string, unknown>
+  const current: Record<SeoField, string> = {
+    metaTitle: "",
+    metaDescription: "",
+    ogTitle: "",
+    ogDescription: "",
+    ogImage: "",
   }
 
-  return output
+  for (const field of seoFields) {
+    const next = fields[field]
+    if (typeof next === "string") {
+      current[field] = next
+    }
+  }
+
+  return current
+}
+
+function toGeneratedFields(value: unknown): Partial<Record<SeoField, string>> {
+  if (!value || typeof value !== "object") return {}
+
+  const raw = value as Record<string, unknown>
+  const generated: Partial<Record<SeoField, string>> = {}
+
+  for (const field of seoFields) {
+    const next = raw[field]
+    if (typeof next === "string") {
+      generated[field] = next
+    }
+  }
+
+  return generated
 }
 
 export async function POST(req: NextRequest) {
@@ -63,15 +92,20 @@ export async function POST(req: NextRequest) {
 
   let body: AutoFixBody
   try {
-    body = await req.json()
+    body = (await req.json()) as AutoFixBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { page, recommendations, currentFields } = body
-  if (!page || !Array.isArray(recommendations)) {
+  const page = typeof body.page === "string" ? body.page : ""
+  const recommendations = Array.isArray(body.recommendations)
+    ? body.recommendations.filter((item): item is string => typeof item === "string")
+    : null
+  const currentFields = toCurrentFields(body.currentFields)
+
+  if (!page || !Array.isArray(body.recommendations) || currentFields === null) {
     return NextResponse.json(
-      { error: "page and recommendations are required" },
+      { error: "page, recommendations, and currentFields are required" },
       { status: 400 }
     )
   }
@@ -79,6 +113,13 @@ export async function POST(req: NextRequest) {
   const site = await prisma.site.findFirst({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      payloadUrl: true,
+      repoUrl: true,
+      domainVerified: true,
+      linked: true,
+    },
   })
 
   if (!site) {
@@ -89,39 +130,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
   }
 
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { status: true, stripePriceId: true },
+  })
+
+  if (!subscription || subscription.status !== "ACTIVE") {
     return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
   }
-  if (subscription.tier === SubscriptionTier.TIER1) {
-    return tierNotAllowedResponse("AI SEO auto-fix")
+
+  const scanLimit = getScanLimit(subscription.stripePriceId)
+  const isStarterByPrice = subscription.stripePriceId === process.env.STRIPE_PRICE_STARTER
+  const isStarterFallback = scanLimit === 5
+
+  if (isStarterByPrice || isStarterFallback) {
+    return NextResponse.json(
+      { error: "Auto-fix is available on Growth and Pro plans." },
+      { status: 403 }
+    )
   }
 
-  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(site, page)
-  if (pageError) {
-    return NextResponse.json({ error: pageError }, { status: pageStatus })
+  if (!site.payloadUrl) {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
   }
 
-  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
+  let pageDoc: Record<string, unknown> | undefined
+
+  try {
+    const pageResponse = await fetch(
+      `${site.payloadUrl}/api/pages?where[slug][equals]=${encodeURIComponent(page)}`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      }
+    )
+
+    if (!pageResponse.ok) {
+      return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+    }
+
+    const pageData = (await pageResponse.json()) as PayloadPageResponse
+    pageDoc = pageData.docs?.[0]
+  } catch {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+  }
+
   if (!pageDoc || typeof pageDoc.id !== "string") {
     return NextResponse.json({ error: "Page not found" }, { status: 404 })
   }
 
-  const payloadFields: Record<SeoField, string> = {
-    metaTitle: String(getNestedValue(pageDoc, "meta.title") ?? ""),
-    metaDescription: String(getNestedValue(pageDoc, "meta.description") ?? ""),
-    ogTitle: String(getNestedValue(pageDoc, "meta.ogTitle") ?? ""),
-    ogDescription: String(getNestedValue(pageDoc, "meta.ogDescription") ?? ""),
-    ogImage: String(getNestedValue(pageDoc, "meta.ogImage") ?? ""),
+  const currentPayloadFields: Record<SeoField, string> = {
+    metaTitle: String(getNestedValue(pageDoc, ["meta", "title"]) ?? ""),
+    metaDescription: String(getNestedValue(pageDoc, ["meta", "description"]) ?? ""),
+    ogTitle: String(getNestedValue(pageDoc, ["openGraph", "title"]) ?? ""),
+    ogDescription: String(getNestedValue(pageDoc, ["openGraph", "description"]) ?? ""),
+    ogImage: String(getNestedValue(pageDoc, ["openGraph", "url"]) ?? ""),
   }
 
-  const baseline: Record<SeoField, string> = {
-    ...payloadFields,
-    ...(currentFields ?? {}),
-  }
-
-  const prompt = `You improve SEO fields for a page.
-Return ONLY valid JSON with these optional string fields:
+  const prompt = `You are an SEO assistant.
+Given these recommendations and current field values, generate improved SEO fields.
+Return ONLY valid JSON in this format:
 {
   "metaTitle": "string",
   "metaDescription": "string",
@@ -129,40 +198,41 @@ Return ONLY valid JSON with these optional string fields:
   "ogDescription": "string",
   "ogImage": "string"
 }
+Only include fields that should be improved.
 
 Page: ${page}
-Current fields:
-${JSON.stringify(baseline, null, 2)}
-
 Recommendations:
-${JSON.stringify(recommendations, null, 2)}`
+${JSON.stringify(recommendations, null, 2)}
 
-  let improved: Partial<Record<SeoField, string>>
+Current fields:
+${JSON.stringify({ ...currentPayloadFields, ...currentFields }, null, 2)}`
+
+  let generated: Partial<Record<SeoField, string>>
+
   try {
-    const response = await anthropic.messages.create({
+    const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 800,
+      max_tokens: 1000,
+      stream: false,
       messages: [{ role: "user", content: prompt }],
     })
 
-    const textBlock = response.content.find((block) => block.type === "text")
-    const text = textBlock && textBlock.type === "text" ? textBlock.text : ""
-    improved = toGeneratedFields(JSON.parse(sanitizeJsonBlock(text)))
+    const text = ("content" in message ? message.content : [])
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("\n")
+      .trim()
+    generated = toGeneratedFields(JSON.parse(sanitizeJson(text)))
   } catch {
-    return NextResponse.json({ error: "Failed to generate SEO fixes" }, { status: 502 })
+    return NextResponse.json({ error: "Failed to generate SEO fixes" }, { status: 500 })
   }
 
   const fixed: string[] = []
   const skipped: string[] = []
-  const fields: SeoField[] = ["metaTitle", "metaDescription", "ogTitle", "ogDescription", "ogImage"]
 
-  for (const field of fields) {
-    const generatedValue = improved[field]?.trim()
-    if (!generatedValue) {
-      skipped.push(field)
-      continue
-    }
-    if (generatedValue === baseline[field].trim()) {
+  for (const field of seoFields) {
+    const nextValue = generated[field]?.trim()
+
+    if (!nextValue) {
       skipped.push(field)
       continue
     }
@@ -172,17 +242,12 @@ ${JSON.stringify(recommendations, null, 2)}`
         site,
         page,
         field,
-        value: generatedValue,
-        userId: session.user.id,
-        subscriptionTier: subscription.tier,
+        value: nextValue,
+        stripePriceId: subscription.stripePriceId,
       })
+      currentPayloadFields[field] = nextValue
       fixed.push(field)
-    } catch (error) {
-      if (error instanceof ContentMutationError) {
-        console.error(`[SEO Auto-Fix] Failed for ${field}:`, error.message)
-      } else {
-        console.error(`[SEO Auto-Fix] Failed for ${field}:`, error)
-      }
+    } catch {
       skipped.push(field)
     }
   }

@@ -1,9 +1,14 @@
 import { auth } from "@/lib/auth"
-import { getAllPagesFromPayload } from "@/lib/payload-client"
 import { prisma } from "@/lib/prisma"
-import { getUserSubscription } from "@/lib/site-access"
-import { SubscriptionStatus } from "@prisma/client"
 import { NextResponse } from "next/server"
+
+interface PayloadPagesResponse {
+  docs?: Array<{
+    id?: string
+    slug?: string
+    title?: string
+  }>
+}
 
 export async function GET() {
   const session = await auth()
@@ -14,27 +19,52 @@ export async function GET() {
   const site = await prisma.site.findFirst({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      payloadUrl: true,
+      domainVerified: true,
+      linked: true,
+    },
   })
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
-  if (!site.domainVerified || !site.linked) {
-    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+
+  if (!site) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 })
   }
 
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
-    return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
+  if (!site.domainVerified) {
+    return NextResponse.json({ error: "Domain not verified" }, { status: 403 })
   }
 
-  const { data, error, status } = await getAllPagesFromPayload(site)
-  if (error) return NextResponse.json({ error }, { status })
+  if (!site.linked) {
+    return NextResponse.json({ error: "Site not linked" }, { status: 403 })
+  }
 
-  const docs = (data as { docs?: Array<Record<string, unknown>> } | null)?.docs ?? []
-  const pages = docs
-    .map((doc) => ({
-      slug: typeof doc.slug === "string" ? doc.slug : "",
-      title: typeof doc.title === "string" ? doc.title : "Untitled",
-    }))
-    .filter((page) => page.slug.length > 0)
+  if (!site.payloadUrl) {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+  }
 
-  return NextResponse.json(pages)
+  try {
+    const response = await fetch(`${site.payloadUrl}/api/pages`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    })
+
+    if (!response.ok) {
+      return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+    }
+
+    const data = (await response.json()) as PayloadPagesResponse
+    const pages = (data.docs ?? [])
+      .map((doc) => ({
+        id: typeof doc.id === "string" ? doc.id : "",
+        slug: typeof doc.slug === "string" ? doc.slug : "",
+        title: typeof doc.title === "string" ? doc.title : "Untitled",
+      }))
+      .filter((page) => page.id.length > 0 && page.slug.length > 0)
+
+    return NextResponse.json({ pages })
+  } catch {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+  }
 }

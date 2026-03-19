@@ -2,34 +2,58 @@
 
 import { useEffect, useMemo, useState } from "react"
 
+type Tier = "TIER1" | "TIER2" | "TIER3"
+
+interface SeoAuditProps {
+  tier: Tier
+}
+
 interface PageOption {
   slug: string
   title: string
 }
 
-interface AuditResult {
-  scores: {
-    metaTitle: number
-    metaDescription: number
-    keywords: number
-    og: number
-  }
+interface AuditScores {
+  metaTitle: number
+  metaDescription: number
+  keywords: number
+  og: number
+}
+
+type AuditState =
+  | { status: "idle" }
+  | { status: "scanning" }
+  | {
+      status: "results"
+      scores: AuditScores
+      recommendations: string[]
+      overallScore: number
+      scansRemaining: number | null
+      page: string
+      keywords: string[]
+    }
+  | { status: "fixing" }
+  | { status: "fixed"; fixedFields: string[] }
+  | { status: "error"; message: string }
+
+interface AuditResponse {
+  scores: AuditScores
   recommendations: string[]
   overallScore: number
-  scansRemaining?: number | null
+  scansRemaining: number | null
+  error?: string
 }
 
-interface SeoAuditProps {
-  maxKeywords: number
-  canAutoFix: boolean
+interface AutoFixResponse {
+  fixed?: string[]
+  skipped?: string[]
+  error?: string
 }
 
-const scoreCards: Array<{ key: keyof AuditResult["scores"]; label: string }> = [
-  { key: "metaTitle", label: "Meta Title" },
-  { key: "metaDescription", label: "Meta Description" },
-  { key: "keywords", label: "Keywords" },
-  { key: "og", label: "Open Graph" },
-]
+interface GetPageResponse {
+  fields?: Record<string, string>
+  error?: string
+}
 
 function scoreColor(score: number): string {
   if (score >= 70) return "text-green-700 bg-green-50 border-green-200"
@@ -37,128 +61,200 @@ function scoreColor(score: number): string {
   return "text-red-700 bg-red-50 border-red-200"
 }
 
-export default function SeoAudit({ maxKeywords, canAutoFix }: SeoAuditProps) {
+function keywordLimitForTier(tier: Tier): number {
+  if (tier === "TIER3") return 999
+  if (tier === "TIER2") return 10
+  return 3
+}
+
+function toCurrentFields(raw: Record<string, string>) {
+  return {
+    metaTitle: raw.metaTitle ?? raw["meta.title"] ?? "",
+    metaDescription: raw.metaDescription ?? raw["meta.description"] ?? "",
+    ogTitle: raw.ogTitle ?? raw["openGraph.title"] ?? raw["meta.ogTitle"] ?? "",
+    ogDescription: raw.ogDescription ?? raw["openGraph.description"] ?? raw["meta.ogDescription"] ?? "",
+    ogImage: raw.ogImage ?? raw["openGraph.url"] ?? raw["meta.ogImage"] ?? "",
+  }
+}
+
+export default function SeoAudit({ tier }: SeoAuditProps) {
+  const [state, setState] = useState<AuditState>({ status: "idle" })
   const [pages, setPages] = useState<PageOption[]>([])
   const [selectedPage, setSelectedPage] = useState("")
   const [keywordInput, setKeywordInput] = useState("")
   const [keywords, setKeywords] = useState<string[]>([])
-  const [isLoadingPages, setIsLoadingPages] = useState(true)
-  const [isScanning, setIsScanning] = useState(false)
-  const [isFixing, setIsFixing] = useState(false)
-  const [result, setResult] = useState<AuditResult | null>(null)
-  const [fixedFields, setFixedFields] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [pageLoading, setPageLoading] = useState(true)
+  const [keywordWarning, setKeywordWarning] = useState<string | null>(null)
+
+  const keywordLimit = useMemo(() => keywordLimitForTier(tier), [tier])
+  const canAutoFix = tier === "TIER2" || tier === "TIER3"
 
   useEffect(() => {
-    const loadPages = async () => {
-      setIsLoadingPages(true)
-      setError(null)
+    let active = true
+
+    async function loadPages() {
+      setPageLoading(true)
       try {
-        const res = await fetch("/api/content/list-pages")
-        const data = (await res.json()) as PageOption[] | { error?: string }
+        const response = await fetch("/api/content/list-pages", { cache: "no-store" })
+        const data = (await response.json()) as { pages?: PageOption[]; error?: string }
 
-        if (!res.ok) {
-          const message = (data as { error?: string }).error ?? "Failed to load pages"
-          throw new Error(message)
+        if (!response.ok) {
+          throw new Error(data.error ?? "Failed to load pages")
         }
 
-        const pageList = Array.isArray(data) ? data : []
+        if (!active) return
+
+        const pageList = Array.isArray(data.pages) ? data.pages : []
         setPages(pageList)
-        if (pageList.length > 0) {
-          setSelectedPage(pageList[0].slug)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load pages")
+        setSelectedPage(pageList[0]?.slug ?? "")
+      } catch (error) {
+        if (!active) return
+        setState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Failed to load pages",
+        })
       } finally {
-        setIsLoadingPages(false)
+        if (active) setPageLoading(false)
       }
     }
 
     void loadPages()
+
+    return () => {
+      active = false
+    }
   }, [])
 
-  const keywordCountLabel = useMemo(() => `${keywords.length}/${maxKeywords}`, [keywords.length, maxKeywords])
-
   const addKeyword = (raw: string) => {
-    const next = raw.trim()
-    if (!next) return
-    if (keywords.includes(next)) return
-    if (keywords.length >= maxKeywords) {
-      setError(`Your plan allows ${maxKeywords} keyword${maxKeywords === 1 ? "" : "s"} per audit.`)
+    const keyword = raw.trim()
+    if (!keyword) return
+    if (keywords.includes(keyword)) return
+
+    if (keywords.length >= keywordLimit) {
+      setKeywordWarning(`Your plan supports up to ${keywordLimit} keywords.`)
       return
     }
 
-    setKeywords((prev) => [...prev, next])
+    setKeywordWarning(null)
+    setKeywords((current) => [...current, keyword])
     setKeywordInput("")
-    setError(null)
+  }
+
+  const removeKeyword = (keyword: string) => {
+    setKeywords((current) => current.filter((item) => item !== keyword))
+    setKeywordWarning(null)
   }
 
   const runAudit = async () => {
-    if (!selectedPage || keywords.length === 0) return
+    if (!selectedPage) {
+      setState({ status: "error", message: "Select a page before running an audit." })
+      return
+    }
 
-    setIsScanning(true)
-    setError(null)
-    setResult(null)
-    setFixedFields([])
+    if (keywords.length === 0) {
+      setState({ status: "error", message: "Add at least one keyword before running an audit." })
+      return
+    }
+
+    if (keywords.length > keywordLimit) {
+      setState({
+        status: "error",
+        message: `Your plan supports up to ${keywordLimit} keywords per audit.`,
+      })
+      return
+    }
+
+    setState({ status: "scanning" })
 
     try {
-      const res = await fetch("/api/seo/audit", {
+      const response = await fetch("/api/seo/audit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page: selectedPage, keywords }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          page: selectedPage,
+          keywords,
+        }),
       })
 
-      const data = (await res.json()) as AuditResult & { error?: string }
-      if (!res.ok) {
+      const data = (await response.json()) as AuditResponse
+
+      if (!response.ok) {
         throw new Error(data.error ?? "Audit failed")
       }
 
-      setResult(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Audit failed")
-    } finally {
-      setIsScanning(false)
+      setState({
+        status: "results",
+        scores: data.scores,
+        recommendations: data.recommendations,
+        overallScore: data.overallScore,
+        scansRemaining: data.scansRemaining,
+        page: selectedPage,
+        keywords: [...keywords],
+      })
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Audit failed",
+      })
     }
   }
 
   const runAutoFix = async () => {
-    if (!result || !canAutoFix || !selectedPage) return
+    if (state.status !== "results") return
+    if (!canAutoFix) return
 
-    setIsFixing(true)
-    setError(null)
+    setState({ status: "fixing" })
+
     try {
-      const res = await fetch("/api/seo/auto-fix", {
+      const pageResponse = await fetch(`/api/content/get-page?slug=${encodeURIComponent(state.page)}`, {
+        cache: "no-store",
+      })
+      const pageData = (await pageResponse.json()) as GetPageResponse
+      if (!pageResponse.ok) {
+        throw new Error(pageData.error ?? "Failed to fetch page fields")
+      }
+
+      const currentFields = toCurrentFields(pageData.fields ?? {})
+
+      const response = await fetch("/api/seo/auto-fix", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          page: selectedPage,
-          recommendations: result.recommendations,
+          page: state.page,
+          recommendations: state.recommendations,
+          currentFields,
         }),
       })
 
-      const data = (await res.json()) as { fixed?: string[]; error?: string }
-      if (!res.ok) {
+      const data = (await response.json()) as AutoFixResponse
+
+      if (!response.ok) {
         throw new Error(data.error ?? "Auto-fix failed")
       }
 
-      setFixedFields(Array.isArray(data.fixed) ? data.fixed : [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Auto-fix failed")
-    } finally {
-      setIsFixing(false)
+      setState({ status: "fixed", fixedFields: data.fixed ?? [] })
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Auto-fix failed",
+      })
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="border border-gray-200 rounded-xl p-4 space-y-4">
+      <div className="rounded-xl border border-gray-200 p-4 space-y-4">
         <div className="space-y-1">
           <label className="text-sm font-medium text-gray-700">Page</label>
           <select
             value={selectedPage}
-            onChange={(e) => setSelectedPage(e.target.value)}
-            disabled={isLoadingPages || pages.length === 0}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-100"
+            disabled={pageLoading || pages.length === 0 || state.status === "scanning" || state.status === "fixing"}
+            onChange={(event) => setSelectedPage(event.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           >
             {pages.map((page) => (
               <option key={page.slug} value={page.slug}>
@@ -170,98 +266,131 @@ export default function SeoAudit({ maxKeywords, canAutoFix }: SeoAuditProps) {
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700">Keywords</label>
+
           <div className="flex flex-wrap gap-2">
             {keywords.map((keyword) => (
               <span
                 key={keyword}
-                className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-50 px-2.5 py-1 text-xs"
+                className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-50 px-2.5 py-1 text-xs"
               >
                 {keyword}
-                <button
-                  type="button"
-                  className="text-gray-500 hover:text-gray-700"
-                  onClick={() => setKeywords((prev) => prev.filter((item) => item !== keyword))}
-                >
+                <button type="button" onClick={() => removeKeyword(keyword)}>
                   ×
                 </button>
               </span>
             ))}
           </div>
+
           <input
             value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === ",") {
-                e.preventDefault()
+            onChange={(event) => setKeywordInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === ",") {
+                event.preventDefault()
                 addKeyword(keywordInput)
               }
             }}
             placeholder="Type a keyword and press Enter"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
           />
-          <p className="text-xs text-gray-500">Keyword limit: {keywordCountLabel}</p>
+
+          <p className="text-xs text-gray-500">
+            Keywords: {keywords.length}/{keywordLimit}
+          </p>
+          {keywordWarning && <p className="text-xs text-amber-600">{keywordWarning}</p>}
         </div>
 
         <button
-          onClick={runAudit}
-          disabled={isScanning || isLoadingPages || !selectedPage || keywords.length === 0}
-          className="inline-flex items-center justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+          type="button"
+          onClick={() => void runAudit()}
+          disabled={state.status === "scanning" || state.status === "fixing" || pageLoading}
+          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
         >
-          {isScanning ? "Analysing your SEO..." : "Run Audit"}
+          {state.status === "scanning" ? "Scanning..." : "Run Audit"}
         </button>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
       </div>
 
-      {result && (
-        <div className="border border-gray-200 rounded-xl p-4 space-y-4">
+      {state.status === "results" && (
+        <div className="rounded-xl border border-gray-200 p-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900">Audit Results</h3>
-            <p className="text-sm text-gray-600">Overall: {result.overallScore}/100</p>
+            {state.scansRemaining !== null && (
+              <span className="text-xs text-gray-500">Scans remaining: {state.scansRemaining}</span>
+            )}
           </div>
 
-          {typeof result.scansRemaining === "number" && (
-            <p className="text-xs text-gray-500">Scans remaining this month: {result.scansRemaining}</p>
-          )}
-
           <div className="grid gap-3 sm:grid-cols-2">
-            {scoreCards.map((card) => (
-              <div
-                key={card.key}
-                className={`border rounded-lg p-3 ${scoreColor(result.scores[card.key])}`}
-              >
-                <p className="text-xs font-medium">{card.label}</p>
-                <p className="text-lg font-semibold mt-1">{result.scores[card.key]}/100</p>
-              </div>
-            ))}
+            <div className={`rounded-lg border p-3 ${scoreColor(state.scores.metaTitle)}`}>
+              <p className="text-xs font-medium">Meta Title</p>
+              <p className="text-lg font-semibold">{state.scores.metaTitle}</p>
+            </div>
+            <div className={`rounded-lg border p-3 ${scoreColor(state.scores.metaDescription)}`}>
+              <p className="text-xs font-medium">Meta Description</p>
+              <p className="text-lg font-semibold">{state.scores.metaDescription}</p>
+            </div>
+            <div className={`rounded-lg border p-3 ${scoreColor(state.scores.keywords)}`}>
+              <p className="text-xs font-medium">Keywords</p>
+              <p className="text-lg font-semibold">{state.scores.keywords}</p>
+            </div>
+            <div className={`rounded-lg border p-3 ${scoreColor(state.scores.og)}`}>
+              <p className="text-xs font-medium">Open Graph</p>
+              <p className="text-lg font-semibold">{state.scores.og}</p>
+            </div>
+          </div>
+
+          <div className={`rounded-lg border p-4 ${scoreColor(state.overallScore)}`}>
+            <p className="text-xs font-medium">Overall Score</p>
+            <p className="text-3xl font-bold">{state.overallScore}</p>
           </div>
 
           <div className="space-y-2">
             <h4 className="text-sm font-medium text-gray-900">Recommendations</h4>
-            {result.recommendations.length === 0 ? (
-              <p className="text-sm text-gray-500">No recommendations returned.</p>
-            ) : (
-              <ul className="list-disc pl-5 space-y-1 text-sm text-gray-700">
-                {result.recommendations.map((item, index) => (
-                  <li key={`${item}-${index}`}>{item}</li>
-                ))}
-              </ul>
-            )}
+            <ul className="list-disc space-y-1 pl-5 text-sm text-gray-700">
+              {state.recommendations.map((recommendation, index) => (
+                <li key={`${recommendation}-${index}`}>{recommendation}</li>
+              ))}
+            </ul>
           </div>
 
           {canAutoFix && (
             <button
-              onClick={runAutoFix}
-              disabled={isFixing || result.recommendations.length === 0}
-              className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              type="button"
+              onClick={() => void runAutoFix()}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
             >
-              {isFixing ? "Applying fixes..." : "Auto-Fix"}
+              Auto-Fix
             </button>
           )}
+        </div>
+      )}
 
-          {fixedFields.length > 0 && (
-            <p className="text-sm text-green-700">Fixed fields: {fixedFields.join(", ")}</p>
-          )}
+      {state.status === "fixing" && (
+        <div className="rounded-xl border border-gray-200 p-4">
+          <p className="text-sm text-gray-600">Fixing...</p>
+        </div>
+      )}
+
+      {state.status === "fixed" && (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+          <p className="text-sm font-medium text-green-700">Auto-fix complete.</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-green-800">
+            {state.fixedFields.map((field) => (
+              <li key={field}>{field}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {state.status === "error" && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
+          <p className="text-sm text-red-700">{state.message}</p>
+          <button
+            type="button"
+            onClick={() => setState({ status: "idle" })}
+            className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700"
+          >
+            Try again
+          </button>
         </div>
       )}
     </div>

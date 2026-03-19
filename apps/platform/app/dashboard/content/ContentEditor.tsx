@@ -9,20 +9,28 @@ interface ContentEditorProps {
 }
 
 interface PageOption {
+  id: string
   slug: string
   title: string
 }
 
 interface FieldVersion {
   id: string
-  previousValue: string
+  oldValue: string
   newValue: string
   createdAt: string
 }
 
 interface GetPageResponse {
-  fields: Record<string, string>
-  versions: Record<string, FieldVersion[]>
+  pageId?: string
+  slug?: string
+  error?: string
+  [key: string]: unknown
+}
+
+interface VersionsResponse {
+  versions?: Record<string, FieldVersion[]>
+  error?: string
 }
 
 type SeoApiField = "metaTitle" | "metaDescription" | "ogTitle" | "ogDescription" | "ogImage"
@@ -88,13 +96,26 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
     setLoadingPage(true)
     setGlobalError(null)
     try {
-      const res = await fetch(`/api/content/get-page?slug=${encodeURIComponent(slug)}`)
-      const data = (await res.json()) as GetPageResponse & { error?: string }
+      const [res, versionsRes] = await Promise.all([
+        fetch(`/api/content/get-page?slug=${encodeURIComponent(slug)}`),
+        fetch(`/api/content/versions?page=${encodeURIComponent(slug)}`),
+      ])
+      const data = (await res.json()) as GetPageResponse
+      const versionsData = (await versionsRes.json()) as VersionsResponse
       if (!res.ok) throw new Error(data.error ?? "Failed to load page fields")
+      if (!versionsRes.ok) throw new Error(versionsData.error ?? "Failed to load page versions")
 
-      setFields(data.fields ?? {})
-      setServerFields(data.fields ?? {})
-      setVersions(data.versions ?? {})
+      const nextFields: Record<string, string> = {}
+      for (const [key, value] of Object.entries(data)) {
+        if (key === "pageId" || key === "slug" || key === "error") continue
+        if (typeof value === "string") {
+          nextFields[key] = value
+        }
+      }
+
+      setFields(nextFields)
+      setServerFields(nextFields)
+      setVersions(versionsData.versions ?? {})
       setHistoryOpenField(null)
       setFieldErrors({})
     } catch (err) {
@@ -383,7 +404,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                               {new Date(version.createdAt).toLocaleString()}
                             </p>
                             <p className="text-xs text-gray-700">
-                              Previous: <span className="font-medium">{version.previousValue}</span>
+                              Previous: <span className="font-medium">{version.oldValue}</span>
                             </p>
                             <button
                               onClick={() => revertVersion(fieldKey, version.id)}
@@ -406,7 +427,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
           {activeTab === "seo" &&
             seoFieldMap.map((seoField) => {
               const value = fields[seoField.key] ?? ""
-              const fieldVersions = versions[seoField.key] ?? []
+              const fieldVersions = versions[seoField.apiField] ?? []
               const isSaving = savingField === seoField.key
               const isSaved = savedField === seoField.key
               const overLimit = typeof seoField.max === "number" && value.length > seoField.max
@@ -491,7 +512,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                               {new Date(version.createdAt).toLocaleString()}
                             </p>
                             <p className="text-xs text-gray-700">
-                              Previous: <span className="font-medium">{version.previousValue}</span>
+                              Previous: <span className="font-medium">{version.oldValue}</span>
                             </p>
                             <button
                               onClick={() => revertVersion(seoField.key, version.id)}

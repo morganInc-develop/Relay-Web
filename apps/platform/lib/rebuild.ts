@@ -1,26 +1,14 @@
-export async function triggerRebuild(webhookUrl: string, payload: Record<string, unknown>): Promise<void> {
-  const secret = process.env.GITHUB_WEBHOOK_SECRET
-
-  if (!webhookUrl || !secret) {
-    console.error("[Rebuild] Missing webhook URL or GITHUB_WEBHOOK_SECRET")
-    return
-  }
-
+export async function triggerRebuild(webhookUrl: string, payload: object): Promise<void> {
   try {
-    const response = await fetch(webhookUrl, {
+    await fetch(webhookUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${secret}`,
+        Authorization: `Bearer ${process.env.GITHUB_WEBHOOK_SECRET}`,
       },
       body: JSON.stringify(payload),
     })
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "")
-      console.error(`[Rebuild] Webhook failed: ${response.status} ${text}`)
-    }
-  } catch (error) {
-    console.error("[Rebuild] Webhook failed:", error)
+  } catch (err) {
+    console.error("[rebuild] Webhook failed:", err)
   }
 }

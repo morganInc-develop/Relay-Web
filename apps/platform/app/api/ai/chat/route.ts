@@ -1,216 +1,399 @@
-import { auth } from "@/lib/auth"
-import { NextRequest, NextResponse } from "next/server"
-import {
-  getSiteForUser,
-  getUserSubscription,
-  tierAllows,
-  tierNotAllowedResponse,
-} from "@/lib/site-access"
-import { sanitizeAIInput, buildSystemPrompt, isAllowedAction } from "@/lib/ai-defense"
-import { checkAndIncrementAIUsage } from "@/lib/ai-usage"
-import { createAIAuditLog } from "@/lib/ai-audit-log"
-import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
-import { getAllPagesFromPayload } from "@/lib/payload-client"
-import { SubscriptionStatus, SubscriptionTier, AIActionType } from "@prisma/client"
 import Anthropic from "@anthropic-ai/sdk"
+import { Ratelimit } from "@upstash/ratelimit"
+import { Redis } from "@upstash/redis"
+import { NextRequest, NextResponse } from "next/server"
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+import { auth } from "@/lib/auth"
+import { getDailyLimit, getMonthlyLimit } from "@/lib/ai-limits"
+import { AI_SYSTEM_PROMPT } from "@/lib/ai-system-prompt"
+import { SanitizationError, sanitizeUserInput } from "@/lib/ai-sanitize"
+import { prisma } from "@/lib/prisma"
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 })
 
+const TEXT_FIELDS = new Set(["heading", "subheading", "body", "buttonText", "ctaText"])
+const SEO_FIELDS = new Set(["metaTitle", "metaDescription", "ogTitle", "ogDescription", "ogImage"])
+
+const UPSELL_MESSAGE = "This request is outside what I can help with. Email hello@morgandev.studio for assistance."
+const RATE_LIMIT_UPSELL = "Need more changes this month? Ask about a managed plan"
+
+type ValidAction = "update-text" | "update-seo"
+
+type ProposedAction = {
+  action: ValidAction
+  page: string
+  field: string
+  value: string
+  reasoning: string
+}
+
 interface ChatBody {
+  message?: string
+}
+
+function getDateParts() {
+  const now = new Date()
+  const day = now.toISOString().slice(0, 10)
+  const month = day.slice(0, 7)
+  return { day, month }
+}
+
+function parseModelJson(text: string): Record<string, unknown> | null {
+  const clean = text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim()
+
+  try {
+    const parsed = JSON.parse(clean)
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+async function getKnownPageSlugs(siteId: string): Promise<string[]> {
+  const [versionPages, scheduledPages] = await Promise.all([
+    prisma.contentVersion.findMany({
+      where: { siteId },
+      select: { page: true },
+      distinct: ["page"],
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.scheduledChange.findMany({
+      where: { siteId },
+      select: { page: true },
+      distinct: ["page"],
+      orderBy: { createdAt: "desc" },
+    }),
+  ])
+
+  const pages = new Set<string>()
+  for (const entry of versionPages) {
+    if (entry.page) {
+      pages.add(entry.page)
+    }
+  }
+
+  for (const entry of scheduledPages) {
+    if (entry.page) {
+      pages.add(entry.page)
+    }
+  }
+
+  if (pages.size === 0) {
+    pages.add("home")
+  }
+
+  return Array.from(pages)
+}
+
+async function logFailedInteraction(params: {
+  userId: string
   siteId: string
   message: string
+  failure: string
+  modelResponse?: string
+}) {
+  await prisma.aiChatLog.create({
+    data: {
+      userId: params.userId,
+      siteId: params.siteId,
+      message: params.message,
+      proposedAction: JSON.stringify({
+        action: "failed",
+        error: params.failure,
+        modelResponse: params.modelResponse ?? null,
+      }),
+      status: "FAILED",
+    },
+  })
 }
 
-interface PayloadPageSummary {
-  id: string
-  slug: string
-  title: string
+async function incrementUsage(userId: string, day: string, month: string, monthlyUsed: number) {
+  await prisma.aiUsage.upsert({
+    where: {
+      userId_date: {
+        userId,
+        date: day,
+      },
+    },
+    create: {
+      userId,
+      date: day,
+      month,
+      dailyCount: 1,
+      monthlyCount: monthlyUsed + 1,
+    },
+    update: {
+      month,
+      dailyCount: { increment: 1 },
+      monthlyCount: { increment: 1 },
+    },
+  })
 }
 
-interface PayloadPagesResponse {
-  docs?: PayloadPageSummary[]
+function buildSystemPromptContext(domain: string, pages: string[]) {
+  const pagesLine = pages.length > 0 ? pages.join(", ") : "unknown"
+
+  return `${AI_SYSTEM_PROMPT}\n\nContext:\n- Domain: ${domain}\n- Available pages: ${pagesLine}`
 }
 
-function mapActionType(action: string): AIActionType {
-  if (action === "update-seo") return AIActionType.SEO_UPDATE
-  return AIActionType.CONTENT_UPDATE
+function createSlidingLimiter(limit: number, window: "1 d" | "30 d", prefix: string) {
+  return new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(limit, window),
+    prefix,
+  })
+}
+
+function normalizeProposal(
+  modelResult: Record<string, unknown>,
+  pageSlugs: string[]
+): { type: "proposal"; value: ProposedAction } | { type: "out_of_scope" } | { type: "invalid" } {
+  const rawAction = String(modelResult.action ?? "").trim()
+  const reasoningRaw = String(modelResult.reasoning ?? "").trim()
+
+  if (rawAction === "out-of-scope" || rawAction === "injection-detected") {
+    return { type: "out_of_scope" }
+  }
+
+  if (rawAction !== "update-text" && rawAction !== "update-seo") {
+    return { type: "invalid" }
+  }
+
+  const page = String(modelResult.page ?? "").trim()
+  const field = String(modelResult.field ?? "").trim()
+  const value = String(modelResult.value ?? "")
+  const reasoning = reasoningRaw.length > 0 ? reasoningRaw : "Proposed change based on your request."
+
+  if (!page || !field || !value) {
+    return { type: "invalid" }
+  }
+
+  if (pageSlugs.length > 0 && !pageSlugs.includes(page)) {
+    return { type: "out_of_scope" }
+  }
+
+  if (rawAction === "update-text" && !TEXT_FIELDS.has(field)) {
+    return { type: "out_of_scope" }
+  }
+
+  if (rawAction === "update-seo" && !SEO_FIELDS.has(field)) {
+    return { type: "out_of_scope" }
+  }
+
+  return {
+    type: "proposal",
+    value: {
+      action: rawAction,
+      page,
+      field,
+      value,
+      reasoning,
+    },
+  }
 }
 
 export async function POST(req: NextRequest) {
-  // 1. Auth check
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  // 2. Parse body
+  const site = await prisma.site.findFirst({
+    where: { ownerId: session.user.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      domain: true,
+      domainVerified: true,
+      linked: true,
+    },
+  })
+
+  if (!site) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  }
+
+  if (!site.domainVerified || !site.linked) {
+    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+  }
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { status: true, stripePriceId: true },
+  })
+
+  if (!subscription || subscription.status !== "ACTIVE") {
+    return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
+  }
+
   let body: ChatBody
   try {
-    body = await req.json()
+    body = (await req.json()) as ChatBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { siteId, message } = body
-  if (!siteId || !message) {
-    return NextResponse.json({ error: "siteId and message are required" }, { status: 400 })
+  if (!body.message || typeof body.message !== "string") {
+    return NextResponse.json({ error: "message is required" }, { status: 400 })
   }
 
-  // 2. Site ownership check
-  const { site, response: accessError } = await getSiteForUser(siteId, session.user.id)
-  if (accessError) return accessError
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
-
-  // 3. Subscription and tier check
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
-    return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
-  }
-  if (!tierAllows(subscription.tier, SubscriptionTier.TIER1)) {
-    return tierNotAllowedResponse("AI assistant")
-  }
-
-  // 4. Daily rate limit check (Upstash)
-  const tier = subscription.tier
-  if (tier === SubscriptionTier.TIER1) {
-    const rateLimit = await checkRateLimit(rateLimiters.aiTier1, `${session.user.id}:chat`)
-    if (!rateLimit.success) return rateLimit.response!
-  } else if (tier === SubscriptionTier.TIER2) {
-    const rateLimit = await checkRateLimit(rateLimiters.aiTier2, `${session.user.id}:chat`)
-    if (!rateLimit.success) return rateLimit.response!
-  }
-
-  // Layer 2 — Input sanitization BEFORE anything else reaches Claude
-  const sanitizeResult = sanitizeAIInput(message)
-  if (sanitizeResult.blocked) {
-    return NextResponse.json(
-      { error: sanitizeResult.reason ?? "Message blocked by security filter" },
-      { status: 400 }
-    )
-  }
-
-  // Monthly usage check and increment
-  const usageCheck = await checkAndIncrementAIUsage(siteId, tier)
-  if (!usageCheck.allowed) return usageCheck.response!
-
-  // Fetch site pages for context
-  let pages: Array<{ id: string; slug: string; title: string }> = []
+  let sanitizedMessage: string
   try {
-    const { data } = await getAllPagesFromPayload(site)
-    pages = ((data as PayloadPagesResponse | null)?.docs ?? []).map((p) => ({
-      id: p.id,
-      slug: p.slug,
-      title: p.title,
-    }))
-  } catch {
-    // Continue with empty pages — AI will handle it
+    sanitizedMessage = sanitizeUserInput(body.message)
+  } catch (error) {
+    if (error instanceof SanitizationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    return NextResponse.json({ error: "Message blocked for safety." }, { status: 400 })
   }
 
-  // Layer 1 — Call Claude Haiku with hardened system prompt
-  const systemPrompt = buildSystemPrompt(pages)
-  let aiResponseText = ""
-  let parsedResponse: Record<string, unknown> = {}
+  const dailyLimit = getDailyLimit(subscription.stripePriceId)
+  const monthlyLimit = getMonthlyLimit(subscription.stripePriceId)
 
+  if (dailyLimit !== null) {
+    const dailyLimiter = createSlidingLimiter(dailyLimit, "1 d", "relayweb:ai:daily")
+    const dailyResult = await dailyLimiter.limit(session.user.id)
+    if (!dailyResult.success) {
+      return NextResponse.json({ error: RATE_LIMIT_UPSELL }, { status: 429 })
+    }
+  }
+
+  if (monthlyLimit !== null) {
+    const monthlyLimiter = createSlidingLimiter(monthlyLimit, "30 d", "relayweb:ai:monthly")
+    const monthlyResult = await monthlyLimiter.limit(session.user.id)
+    if (!monthlyResult.success) {
+      return NextResponse.json({ error: RATE_LIMIT_UPSELL }, { status: 429 })
+    }
+  }
+
+  const { day, month } = getDateParts()
+  const monthUsage = await prisma.aiUsage.findFirst({
+    where: { userId: session.user.id, month },
+    orderBy: { updatedAt: "desc" },
+    select: { monthlyCount: true },
+  })
+  const monthlyUsed = monthUsage?.monthlyCount ?? 0
+
+  const pages = await getKnownPageSlugs(site.id)
+  const systemPrompt = buildSystemPromptContext(site.domain ?? "unknown", pages)
+
+  let modelResult: Record<string, unknown>
+  let rawModelResponse = ""
   try {
-    const messageResponse = await anthropic.messages.create({
+    const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 500,
       system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: sanitizeResult.sanitized,
-        },
-      ],
+      messages: [{ role: "user", content: sanitizedMessage }],
     })
 
-    aiResponseText =
-      messageResponse.content[0].type === "text" ? messageResponse.content[0].text : ""
-
-    const cleanText = aiResponseText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/, "")
+    rawModelResponse = response.content
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("\n")
       .trim()
 
-    // Parse the JSON response
-    parsedResponse = JSON.parse(cleanText)
-  } catch {
-    // Log failed AI call then return error
-    await createAIAuditLog({
-      siteId,
-      userId: session.user.id,
-      actionType: AIActionType.CONTENT_UPDATE,
-      pageSlug: "unknown",
-      fieldKey: null,
-      previousValue: null,
-      newValue: null,
-      userPrompt: sanitizeResult.sanitized,
-      aiResponse: aiResponseText,
-      wasApplied: false,
-      wasRejected: true,
-    })
-    return NextResponse.json({ error: "AI failed to process request" }, { status: 500 })
-  }
+    const parsed = parseModelJson(rawModelResponse)
+    if (!parsed) {
+      await logFailedInteraction({
+        userId: session.user.id,
+        siteId: site.id,
+        message: sanitizedMessage,
+        failure: "invalid_json_response",
+        modelResponse: rawModelResponse,
+      })
 
-  // Layer 3 — Validate the action is allowed
-  const action = String(parsedResponse.action ?? "")
-  if (!isAllowedAction(action)) {
-    await createAIAuditLog({
-      siteId,
+      return NextResponse.json(
+        {
+          error: "AI returned an invalid response. Please try again.",
+          code: "INVALID_AI_RESPONSE",
+        },
+        { status: 422 }
+      )
+    }
+
+    modelResult = parsed
+  } catch {
+    await logFailedInteraction({
       userId: session.user.id,
-      actionType: AIActionType.CONTENT_UPDATE,
-      pageSlug: String(parsedResponse.pageSlug ?? "unknown"),
-      fieldKey: parsedResponse.fieldKey ? String(parsedResponse.fieldKey) : null,
-      previousValue: null,
-      newValue: parsedResponse.newValue ? String(parsedResponse.newValue) : null,
-      userPrompt: sanitizeResult.sanitized,
-      aiResponse: aiResponseText,
-      wasApplied: false,
-      wasRejected: true,
+      siteId: site.id,
+      message: sanitizedMessage,
+      failure: "provider_error",
+      modelResponse: rawModelResponse || undefined,
     })
+
     return NextResponse.json(
-      { error: "AI attempted an unauthorized action" },
-      { status: 400 }
+      {
+        error: "AI failed to process request. Please try again.",
+        code: "AI_PROVIDER_ERROR",
+      },
+      { status: 502 }
     )
   }
 
-  // Log the AI suggestion (not yet applied)
-  await createAIAuditLog({
-    siteId,
-    userId: session.user.id,
-    actionType: mapActionType(action),
-    pageSlug: String(parsedResponse.pageSlug ?? "unknown"),
-    fieldKey: parsedResponse.fieldKey ? String(parsedResponse.fieldKey) : null,
-    previousValue: null,
-    newValue: parsedResponse.newValue ? String(parsedResponse.newValue) : null,
-    userPrompt: sanitizeResult.sanitized,
-    aiResponse: aiResponseText,
-    wasApplied: false,
-    wasRejected: false,
+  const normalized = normalizeProposal(modelResult, pages)
+
+  if (normalized.type === "invalid") {
+    await logFailedInteraction({
+      userId: session.user.id,
+      siteId: site.id,
+      message: sanitizedMessage,
+      failure: "invalid_action_shape",
+      modelResponse: rawModelResponse,
+    })
+
+    return NextResponse.json(
+      {
+        error: "AI returned an invalid action format. Please try again.",
+        code: "INVALID_ACTION_SHAPE",
+      },
+      { status: 422 }
+    )
+  }
+
+  if (normalized.type === "out_of_scope") {
+    const chatLog = await prisma.aiChatLog.create({
+      data: {
+        userId: session.user.id,
+        siteId: site.id,
+        message: sanitizedMessage,
+        proposedAction: JSON.stringify({ action: "out-of-scope", reasoning: UPSELL_MESSAGE }),
+        status: "PENDING",
+      },
+    })
+
+    await incrementUsage(session.user.id, day, month, monthlyUsed)
+
+    return NextResponse.json({
+      action: "out-of-scope",
+      message: UPSELL_MESSAGE,
+      upsell: true,
+      logId: chatLog.id,
+    })
+  }
+
+  const chatLog = await prisma.aiChatLog.create({
+    data: {
+      userId: session.user.id,
+      siteId: site.id,
+      message: sanitizedMessage,
+      proposedAction: JSON.stringify(normalized.value),
+      status: "PENDING",
+    },
   })
 
-  // Return AI suggestion with confirmation required flag
+  await incrementUsage(session.user.id, day, month, monthlyUsed)
+
   return NextResponse.json({
-    action: parsedResponse.action,
-    pageSlug: parsedResponse.pageSlug ?? null,
-    pageId: parsedResponse.pageId ?? null,
-    fieldKey: parsedResponse.fieldKey ?? null,
-    newValue: parsedResponse.newValue ?? null,
-    humanMessage: parsedResponse.humanMessage ?? "I can help with that.",
-    requiresConfirmation:
-      typeof parsedResponse.requiresConfirmation === "boolean"
-        ? parsedResponse.requiresConfirmation
-        : true,
-    confidenceScore:
-      typeof parsedResponse.confidenceScore === "number"
-        ? parsedResponse.confidenceScore
-        : 0,
-    usage: {
-      used: usageCheck.monthlyUsed,
-      limit: usageCheck.monthlyLimit,
-    },
+    proposedAction: normalized.value,
+    logId: chatLog.id,
   })
 }

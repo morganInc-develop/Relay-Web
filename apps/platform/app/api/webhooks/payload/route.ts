@@ -9,22 +9,23 @@ interface PayloadWebhookBody {
 }
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.PAYLOAD_WEBHOOK_SECRET
+  const expectedSecret = process.env.PAYLOAD_WEBHOOK_SECRET
   const authHeader = req.headers.get("authorization")
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : authHeader
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : ""
 
-  if (!secret || token !== secret) {
+  if (!expectedSecret || token !== expectedSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   let body: PayloadWebhookBody
   try {
-    body = await req.json()
+    body = (await req.json()) as PayloadWebhookBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
   const { siteId, collection, operation } = body
+
   if (!siteId || !collection || !operation) {
     return NextResponse.json(
       { error: "siteId, collection, and operation are required" },
@@ -32,12 +33,17 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const site = await prisma.site.findUnique({ where: { id: siteId } })
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  const site = await prisma.site.findUnique({
+    where: { id: siteId },
+    select: { repoUrl: true },
+  })
 
-  await triggerRebuild(site.repoUrl ?? "", {
+  if (!site) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  }
+
+  await triggerRebuild(`${site.repoUrl ?? ""}/dispatches`, {
     source: "payload",
-    siteId,
     collection,
     operation,
   })

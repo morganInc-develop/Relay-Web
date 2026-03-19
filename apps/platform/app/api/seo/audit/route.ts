@@ -1,22 +1,19 @@
 import { auth } from "@/lib/auth"
-import { getPageFromPayload } from "@/lib/payload-client"
 import { prisma } from "@/lib/prisma"
-import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
-import { getUserSubscription } from "@/lib/site-access"
+import { getKeywordLimit, getScanLimit } from "@/lib/seo-limits"
 import Anthropic from "@anthropic-ai/sdk"
-import { Prisma, SubscriptionStatus, SubscriptionTier } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
-
 interface AuditBody {
-  page: string
-  keywords: string[]
+  page?: string
+  keywords?: unknown
 }
 
-interface AuditResultShape {
+interface PayloadPageResponse {
+  docs?: Array<Record<string, unknown>>
+}
+
+interface AuditResult {
   scores: {
     metaTitle: number
     metaDescription: number
@@ -27,34 +24,35 @@ interface AuditResultShape {
   overallScore: number
 }
 
-function isAuditResultShape(value: unknown): value is AuditResultShape {
-  if (!value || typeof value !== "object") return false
-  const candidate = value as Record<string, unknown>
-  if (!candidate.scores || typeof candidate.scores !== "object") return false
-  if (!Array.isArray(candidate.recommendations)) return false
-  if (typeof candidate.overallScore !== "number") return false
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-  const scores = candidate.scores as Record<string, unknown>
+function getNestedValue(value: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = value
+
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+
+  return current
+}
+
+function isAuditResult(value: unknown): value is AuditResult {
+  if (!value || typeof value !== "object") return false
+
+  const candidate = value as Record<string, unknown>
+  const scores = candidate.scores as Record<string, unknown> | undefined
+
   return (
+    !!scores &&
     typeof scores.metaTitle === "number" &&
     typeof scores.metaDescription === "number" &&
     typeof scores.keywords === "number" &&
-    typeof scores.og === "number"
+    typeof scores.og === "number" &&
+    Array.isArray(candidate.recommendations) &&
+    candidate.recommendations.every((item) => typeof item === "string") &&
+    typeof candidate.overallScore === "number"
   )
-}
-
-function cleanJson(text: string): string {
-  return text
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim()
-}
-
-function getLimits(tier: SubscriptionTier): { scanLimit: number | null; keywordLimit: number } {
-  if (tier === SubscriptionTier.TIER3) return { scanLimit: null, keywordLimit: 999 }
-  if (tier === SubscriptionTier.TIER2) return { scanLimit: 20, keywordLimit: 10 }
-  return { scanLimit: 5, keywordLimit: 3 }
 }
 
 export async function POST(req: NextRequest) {
@@ -63,68 +61,107 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const seoRateLimit = await checkRateLimit(rateLimiters.seoAudit, session.user.id)
-  if (!seoRateLimit.success) return seoRateLimit.response!
-
   let body: AuditBody
   try {
-    body = await req.json()
+    body = (await req.json()) as AuditBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  if (!body.page || !Array.isArray(body.keywords) || body.keywords.length === 0) {
+  const page = typeof body.page === "string" ? body.page : ""
+  const keywords = Array.isArray(body.keywords)
+    ? body.keywords.filter((keyword): keyword is string => typeof keyword === "string")
+    : null
+
+  if (!page || !Array.isArray(body.keywords) || keywords === null) {
     return NextResponse.json({ error: "page and keywords are required" }, { status: 400 })
   }
 
   const site = await prisma.site.findFirst({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      payloadUrl: true,
+      domainVerified: true,
+      linked: true,
+    },
   })
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
+
+  if (!site) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  }
+
   if (!site.domainVerified || !site.linked) {
     return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
   }
 
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
-    return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
-  }
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { stripePriceId: true },
+  })
 
-  const { scanLimit, keywordLimit } = getLimits(subscription.tier)
-  if (body.keywords.length > keywordLimit) {
+  const scanLimit = getScanLimit(subscription?.stripePriceId)
+  const keywordLimit = getKeywordLimit(subscription?.stripePriceId)
+
+  if (keywords.length > keywordLimit) {
     return NextResponse.json(
-      { error: `Your plan allows ${keywordLimit} keywords per audit.` },
+      { error: `Your plan supports up to ${keywordLimit} keywords per audit.` },
       { status: 400 }
     )
   }
 
-  const monthStart = new Date()
-  monthStart.setDate(1)
-  monthStart.setHours(0, 0, 0, 0)
+  const now = new Date()
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-  const scanCount = await prisma.sEOAudit.count({
+  const scansUsedThisMonth = await prisma.seoScan.count({
     where: {
-      siteId: site.id,
-      createdAt: { gte: monthStart },
+      userId: session.user.id,
+      createdAt: { gte: startOfMonth },
     },
   })
 
-  if (scanLimit !== null && scanCount >= scanLimit) {
-    return NextResponse.json({ error: "Monthly scan limit reached" }, { status: 429 })
+  if (scanLimit !== null && scansUsedThisMonth >= scanLimit) {
+    return NextResponse.json(
+      { error: "Monthly scan limit reached. Upgrade to run more audits." },
+      { status: 429 }
+    )
   }
 
-  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(site, body.page)
-  if (pageError) return NextResponse.json({ error: pageError }, { status: pageStatus })
+  if (!site.payloadUrl) {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+  }
 
-  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
-  if (!pageDoc) return NextResponse.json({ error: "Page not found" }, { status: 404 })
+  let pageDoc: Record<string, unknown> | undefined
 
-  const meta = (pageDoc.meta as Record<string, unknown> | undefined) ?? {}
-  const metaTitle = String(meta.title ?? "")
-  const metaDescription = String(meta.description ?? "")
-  const ogTitle = String(meta.ogTitle ?? "")
-  const ogDescription = String(meta.ogDescription ?? "")
+  try {
+    const pageResponse = await fetch(
+      `${site.payloadUrl}/api/pages?where[slug][equals]=${encodeURIComponent(page)}`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      }
+    )
+
+    if (!pageResponse.ok) {
+      return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+    }
+
+    const pageData = (await pageResponse.json()) as PayloadPageResponse
+    pageDoc = pageData.docs?.[0]
+  } catch {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+  }
+
+  if (!pageDoc) {
+    return NextResponse.json({ error: "Page not found" }, { status: 404 })
+  }
+
+  const metaTitle = getNestedValue(pageDoc, ["meta", "title"])
+  const metaDescription = getNestedValue(pageDoc, ["meta", "description"])
+  const ogTitle = getNestedValue(pageDoc, ["openGraph", "title"])
+  const ogDescription = getNestedValue(pageDoc, ["openGraph", "description"])
 
   const systemPrompt = `You are an SEO audit assistant. Analyse the provided page SEO fields and keywords.
 Return ONLY valid JSON with this exact shape:
@@ -140,48 +177,57 @@ Return ONLY valid JSON with this exact shape:
 }
 Do not include any text outside the JSON object.`
 
-  const userPrompt = `Page: ${body.page}
-Keywords: ${body.keywords.join(", ")}
-metaTitle: ${metaTitle}
-metaDescription: ${metaDescription}
-ogTitle: ${ogTitle}
-ogDescription: ${ogDescription}`
+  const userPrompt = `Page: ${page}
+Meta Title: ${metaTitle ?? "(not set)"}
+Meta Description: ${metaDescription ?? "(not set)"}
+OG Title: ${ogTitle ?? "(not set)"}
+OG Description: ${ogDescription ?? "(not set)"}
+Target Keywords: ${keywords.join(", ")}
 
-  let result: AuditResultShape
+Analyse each SEO field for length, keyword presence, and best practices.
+Score each 0-100. Return JSON only.`
+
+  let audit: AuditResult
+
   try {
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 1000,
+      stream: false,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     })
 
-    const textBlock = message.content.find((block) => block.type === "text")
-    const text = textBlock && textBlock.type === "text" ? textBlock.text : ""
-    const parsed = JSON.parse(cleanJson(text)) as unknown
-    if (!isAuditResultShape(parsed)) {
-      return NextResponse.json({ error: "AI returned invalid audit format" }, { status: 502 })
+    const text = ("content" in message ? message.content : [])
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("\n")
+      .trim()
+    const parsed = JSON.parse(text) as unknown
+
+    if (!isAuditResult(parsed)) {
+      return NextResponse.json({ error: "Invalid JSON returned from audit model." }, { status: 500 })
     }
 
-    result = parsed
+    audit = parsed
   } catch {
-    return NextResponse.json({ error: "AI audit failed — please try again" }, { status: 500 })
+    return NextResponse.json({ error: "Invalid JSON returned from audit model." }, { status: 500 })
   }
 
-  await prisma.sEOAudit.create({
+  await prisma.seoScan.create({
     data: {
+      userId: session.user.id,
       siteId: site.id,
-      page: body.page,
-      keywords: body.keywords,
-      score: result.overallScore,
-      results: result as unknown as Prisma.InputJsonValue,
+      page,
     },
   })
 
-  const scansRemaining = scanLimit === null ? null : Math.max(scanLimit - (scanCount + 1), 0)
+  const scansUsed = scansUsedThisMonth + 1
+  const scansRemaining = scanLimit === null ? null : Math.max(scanLimit - scansUsed, 0)
 
   return NextResponse.json({
-    ...result,
+    scores: audit.scores,
+    recommendations: audit.recommendations,
+    overallScore: audit.overallScore,
     scansRemaining,
   })
 }

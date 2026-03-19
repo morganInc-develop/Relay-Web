@@ -1,44 +1,55 @@
 import { auth } from "@/lib/auth"
-import { getPageFromPayload, updatePageInPayload } from "@/lib/payload-client"
 import { prisma } from "@/lib/prisma"
-import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
 import { triggerRebuild } from "@/lib/rebuild"
-import { getUserSubscription } from "@/lib/site-access"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
-import { ChangeSource, SubscriptionStatus } from "@prisma/client"
 import { NextRequest, NextResponse } from "next/server"
 
 interface RevertBody {
-  versionId: string
+  versionId?: string
 }
 
-function buildNestedPatch(path: string, value: string): Record<string, unknown> {
-  const keys = path.split(".")
-  const root: Record<string, unknown> = {}
-  let current: Record<string, unknown> = root
+interface PayloadPageResponse {
+  docs?: Array<Record<string, unknown>>
+}
 
-  keys.forEach((key, index) => {
-    if (index === keys.length - 1) {
-      current[key] = value
+const SEO_FIELD_PATHS: Record<string, string[]> = {
+  metaTitle: ["meta", "title"],
+  metaDescription: ["meta", "description"],
+  ogTitle: ["openGraph", "title"],
+  ogDescription: ["openGraph", "description"],
+  ogImage: ["openGraph", "url"],
+}
+
+function resolveFieldPath(field: string): string[] {
+  if (SEO_FIELD_PATHS[field]) return SEO_FIELD_PATHS[field]
+  const path = field.split(".").filter(Boolean)
+  return path.length > 0 ? path : [field]
+}
+
+function getNestedValue(value: Record<string, unknown>, path: string[]): unknown {
+  let current: unknown = value
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return undefined
+    current = (current as Record<string, unknown>)[segment]
+  }
+  return current
+}
+
+function buildNestedPatch(path: string[], value: string): Record<string, unknown> {
+  const root: Record<string, unknown> = {}
+  let cursor = root
+
+  path.forEach((segment, index) => {
+    if (index === path.length - 1) {
+      cursor[segment] = value
       return
     }
 
     const next: Record<string, unknown> = {}
-    current[key] = next
-    current = next
+    cursor[segment] = next
+    cursor = next
   })
 
   return root
-}
-
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split(".")
-  let value: unknown = obj
-  for (const key of keys) {
-    if (!value || typeof value !== "object") return undefined
-    value = (value as Record<string, unknown>)[key]
-  }
-  return value
 }
 
 export async function PATCH(req: NextRequest) {
@@ -47,12 +58,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
-  if (!rateLimit.success) return rateLimit.response!
-
   let body: RevertBody
   try {
-    body = await req.json()
+    body = (await req.json()) as RevertBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
@@ -61,62 +69,96 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "versionId is required" }, { status: 400 })
   }
 
-  const version = await prisma.versionSnapshot.findUnique({
+  const version = await prisma.contentVersion.findUnique({
     where: { id: body.versionId },
-    include: { site: true },
+    select: {
+      id: true,
+      siteId: true,
+      page: true,
+      field: true,
+      oldValue: true,
+      site: {
+        select: {
+          ownerId: true,
+          payloadUrl: true,
+          repoUrl: true,
+        },
+      },
+    },
   })
 
-  if (!version) return NextResponse.json({ error: "Version not found" }, { status: 404 })
+  if (!version) {
+    return NextResponse.json({ error: "Version not found" }, { status: 404 })
+  }
+
   if (version.site.ownerId !== session.user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
-  if (!version.site.domainVerified || !version.site.linked) {
-    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
+
+  if (!version.site.payloadUrl) {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
   }
 
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
-    return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
+  let pageDoc: Record<string, unknown> | undefined
+
+  try {
+    const pageResponse = await fetch(
+      `${version.site.payloadUrl}/api/pages?where[slug][equals]=${encodeURIComponent(version.page)}`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      }
+    )
+
+    if (!pageResponse.ok) {
+      return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+    }
+
+    const pageData = (await pageResponse.json()) as PayloadPageResponse
+    pageDoc = pageData.docs?.[0]
+  } catch {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
   }
 
-  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(
-    version.site,
-    version.pageSlug
-  )
-  if (pageError) return NextResponse.json({ error: pageError }, { status: pageStatus })
-
-  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
   if (!pageDoc || typeof pageDoc.id !== "string") {
     return NextResponse.json({ error: "Page not found" }, { status: 404 })
   }
 
-  const currentValue = String(getNestedValue(pageDoc, version.fieldKey) ?? "")
+  const fieldPath = resolveFieldPath(version.field)
+  const currentPayloadValue = String(getNestedValue(pageDoc, fieldPath) ?? "")
+  const patchPayload = buildNestedPatch(fieldPath, version.oldValue)
 
-  const updateData = buildNestedPatch(version.fieldKey, version.previousValue)
-  const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
-    version.site,
-    pageDoc.id,
-    updateData
-  )
-  if (payloadError) return NextResponse.json({ error: payloadError }, { status: payloadStatus })
+  try {
+    const patchResponse = await fetch(`${version.site.payloadUrl}/api/pages/${pageDoc.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(patchPayload),
+    })
 
-  await createVersionSnapshot({
-    siteId: version.siteId,
-    pageSlug: version.pageSlug,
-    fieldKey: version.fieldKey,
-    previousValue: currentValue,
-    newValue: version.previousValue,
-    changedBy: session.user.id,
-    source: ChangeSource.MANUAL,
-    maxVersions: getMaxVersions(subscription.tier),
+    if (!patchResponse.ok) {
+      return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+    }
+  } catch {
+    return NextResponse.json({ error: "Payload fetch failed" }, { status: 502 })
+  }
+
+  await prisma.contentVersion.create({
+    data: {
+      siteId: version.siteId,
+      page: version.page,
+      field: version.field,
+      oldValue: currentPayloadValue,
+      newValue: version.oldValue,
+    },
   })
 
-  await triggerRebuild(version.site.repoUrl ?? "", {
-    source: "platform-revert",
-    page: version.pageSlug,
-    field: version.fieldKey,
-    triggeredBy: session.user.id,
+  await triggerRebuild(`${version.site.repoUrl ?? ""}/dispatches`, {
+    event_type: "content-update",
+    client_payload: { page: version.page, field: version.field },
   })
 
-  return NextResponse.json({ success: true, revertedTo: version.previousValue })
+  return NextResponse.json({ success: true, revertedTo: version.oldValue })
 }

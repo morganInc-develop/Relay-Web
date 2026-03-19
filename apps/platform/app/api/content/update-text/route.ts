@@ -1,47 +1,27 @@
 import { auth } from "@/lib/auth"
+import { applyTextFieldUpdate, ContentMutationError } from "@/lib/content-mutations"
 import { sendEmail } from "@/lib/email"
-import { getPageFromPayload, updatePageInPayload } from "@/lib/payload-client"
+import { contentUpdatedEmail } from "@/lib/email-templates"
 import { prisma } from "@/lib/prisma"
-import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
-import { triggerRebuild } from "@/lib/rebuild"
-import { getUserSubscription } from "@/lib/site-access"
-import { createVersionSnapshot, getMaxVersions } from "@/lib/version-snapshot"
-import { ChangeSource, SubscriptionStatus } from "@prisma/client"
+import { Ratelimit } from "@upstash/ratelimit"
+import { Redis } from "@upstash/redis"
 import { NextRequest, NextResponse } from "next/server"
 
 interface UpdateTextBody {
-  page: string
-  field: string
-  value: string
+  page?: string
+  field?: string
+  value?: string
 }
 
-function buildNestedPatch(path: string, value: string): Record<string, unknown> {
-  const keys = path.split(".")
-  const root: Record<string, unknown> = {}
-  let current: Record<string, unknown> = root
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+})
 
-  keys.forEach((key, index) => {
-    if (index === keys.length - 1) {
-      current[key] = value
-      return
-    }
-    const next: Record<string, unknown> = {}
-    current[key] = next
-    current = next
-  })
-
-  return root
-}
-
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  const keys = path.split(".")
-  let value: unknown = obj
-  for (const key of keys) {
-    if (!value || typeof value !== "object") return undefined
-    value = (value as Record<string, unknown>)[key]
-  }
-  return value
-}
+const contentRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(30, "1 h"),
+})
 
 export async function PATCH(req: NextRequest) {
   const session = await auth()
@@ -49,95 +29,76 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const rateLimit = await checkRateLimit(rateLimiters.contentUpdate, session.user.id)
-  if (!rateLimit.success) return rateLimit.response!
-
   let body: UpdateTextBody
   try {
-    body = await req.json()
+    body = (await req.json()) as UpdateTextBody
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
   const { page, field, value } = body
-  if (!page || !field || value === undefined) {
+  if (!page || !field || typeof value !== "string") {
     return NextResponse.json({ error: "page, field, and value are required" }, { status: 400 })
   }
 
   const site = await prisma.site.findFirst({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
-  })
-  if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 })
-  if (!site.domainVerified || !site.linked) {
-    return NextResponse.json({ error: "Site must be verified and linked first" }, { status: 403 })
-  }
-
-  const subscription = await getUserSubscription(session.user.id)
-  if (!subscription || subscription.status !== SubscriptionStatus.ACTIVE) {
-    return NextResponse.json({ error: "Active subscription required" }, { status: 403 })
-  }
-
-  const { data: pageData, error: pageError, status: pageStatus } = await getPageFromPayload(site, page)
-  if (pageError) return NextResponse.json({ error: pageError }, { status: pageStatus })
-
-  const pageDoc = (pageData as { docs?: Array<Record<string, unknown>> } | null)?.docs?.[0]
-  if (!pageDoc || typeof pageDoc.id !== "string") {
-    return NextResponse.json({ error: "Page not found" }, { status: 404 })
-  }
-
-  const oldValue = String(getNestedValue(pageDoc, field) ?? "")
-  const maxVersions = getMaxVersions(subscription.tier)
-
-  await createVersionSnapshot({
-    siteId: site.id,
-    pageSlug: page,
-    fieldKey: field,
-    previousValue: oldValue,
-    newValue: value,
-    changedBy: session.user.id,
-    source: ChangeSource.MANUAL,
-    maxVersions,
-  })
-
-  const updateData = buildNestedPatch(field, value)
-  const { error: payloadError, status: payloadStatus } = await updatePageInPayload(
-    site,
-    pageDoc.id,
-    updateData
-  )
-  if (payloadError) {
-    return NextResponse.json({ error: payloadError }, { status: payloadStatus })
-  }
-
-  await triggerRebuild(site.repoUrl ?? "", {
-    source: "platform-text-update",
-    page,
-    field,
-    triggeredBy: session.user.id,
-  })
-
-  const versionCount = await prisma.versionSnapshot.count({
-    where: {
-      siteId: site.id,
-      pageSlug: page,
-      fieldKey: field,
+    select: {
+      id: true,
+      payloadUrl: true,
+      domainVerified: true,
+      linked: true,
+      repoUrl: true,
     },
   })
 
-  const agencyEmail = "hello@morgandev.studio"
+  if (!site) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 })
+  }
+
+  if (!site.domainVerified) {
+    return NextResponse.json({ error: "Domain not verified" }, { status: 403 })
+  }
+
+  if (!site.linked) {
+    return NextResponse.json({ error: "Site not linked" }, { status: 403 })
+  }
+
+  const rateLimitResult = await contentRateLimit.limit(`relayweb:content:${session.user.id}`)
+  if (!rateLimitResult.success) {
+    return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
+  }
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { stripePriceId: true },
+  })
+
+  let result: { success: true; versionsRemaining: number }
   try {
-    await sendEmail({
-      to: agencyEmail,
-      subject: `Client updated ${field} on ${page}`,
-      html: `<p>Client ${session.user.id} updated <strong>${field}</strong> on <strong>${page}</strong>.</p>`,
+    result = await applyTextFieldUpdate({
+      site,
+      page,
+      field,
+      value,
+      stripePriceId: subscription?.stripePriceId,
     })
   } catch (error) {
-    console.error("[Content] Agency notification email failed:", error)
+    if (error instanceof ContentMutationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return NextResponse.json({ error: "Failed to update field" }, { status: 500 })
   }
+
+  await sendEmail({
+    to: process.env.AGENCY_EMAIL!,
+    subject: "Client updated content",
+    html: contentUpdatedEmail("Agency", field, page),
+  })
 
   return NextResponse.json({
     success: true,
-    versionsRemaining: Math.max(maxVersions - versionCount, 0),
+    versionsRemaining: result.versionsRemaining,
   })
 }

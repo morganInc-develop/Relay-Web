@@ -6,87 +6,162 @@ interface ScheduledPublishProps {
   page: string
   field: string
   value: string
-  onScheduled?: (isoDate: string) => void
 }
 
-export default function ScheduledPublish({
-  page,
-  field,
-  value,
-  onScheduled,
-}: ScheduledPublishProps) {
-  const [enabled, setEnabled] = useState(false)
-  const [publishAt, setPublishAt] = useState("")
-  const [isScheduling, setIsScheduling] = useState(false)
-  const [scheduledFor, setScheduledFor] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+type ScheduleState =
+  | { status: "idle" }
+  | { status: "open"; publishAt: string }
+  | { status: "scheduling" }
+  | { status: "scheduled"; publishAt: string; id: string }
+  | { status: "error"; message: string }
 
-  const handleSchedule = async () => {
-    if (!publishAt) return
+interface ScheduleResponse {
+  success?: boolean
+  scheduledAt?: string
+  id?: string
+  error?: string
+}
 
-    setIsScheduling(true)
-    setError(null)
+function toDatetimeLocal(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+export default function ScheduledPublish({ page, field, value }: ScheduledPublishProps) {
+  const [state, setState] = useState<ScheduleState>({ status: "idle" })
+  const [pendingPublishAt, setPendingPublishAt] = useState("")
+
+  const minimumPublishAt = toDatetimeLocal(new Date(Date.now() + 5 * 60 * 1000))
+
+  const startScheduling = () => {
+    const initialDate = minimumPublishAt
+    setPendingPublishAt(initialDate)
+    setState({ status: "open", publishAt: initialDate })
+  }
+
+  const submitSchedule = async () => {
+    if (state.status !== "open") return
+
+    const publishAt = state.publishAt
+    if (!publishAt) {
+      setState({ status: "error", message: "Pick a publish date and time." })
+      return
+    }
+
+    setPendingPublishAt(publishAt)
+    setState({ status: "scheduling" })
+
     try {
-      const res = await fetch("/api/content/schedule", {
+      const response = await fetch("/api/content/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page, field, value, publishAt }),
+        body: JSON.stringify({ page, field, value, publishAt: new Date(publishAt).toISOString() }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error ?? "Failed to schedule update")
 
-      const iso = String(data.scheduledFor ?? new Date(publishAt).toISOString())
-      setScheduledFor(iso)
-      setEnabled(false)
-      onScheduled?.(iso)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to schedule update")
-    } finally {
-      setIsScheduling(false)
+      const data = (await response.json()) as ScheduleResponse
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Failed to schedule update")
+      }
+
+      const scheduledAt = typeof data.scheduledAt === "string" ? data.scheduledAt : publishAt
+      setState({
+        status: "scheduled",
+        publishAt: scheduledAt,
+        id: typeof data.id === "string" ? data.id : "",
+      })
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Failed to schedule update",
+      })
     }
   }
 
-  if (scheduledFor) {
+  if (state.status === "scheduled") {
     return (
-      <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 border border-blue-200">
-        Scheduled for {new Date(scheduledFor).toLocaleString()}
+      <span className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
+        Scheduled for {new Date(state.publishAt).toLocaleString()}
+        <button type="button" onClick={() => setState({ status: "idle" })} aria-label="Clear schedule badge">
+          ×
+        </button>
       </span>
     )
   }
 
   return (
     <div className="space-y-2">
-      <button
-        type="button"
-        onClick={() => {
-          setEnabled((prev) => !prev)
-          setError(null)
-        }}
-        className="text-xs text-gray-500 hover:text-gray-700 transition-colors"
-      >
-        {enabled ? "Cancel scheduling" : "Schedule for later"}
-      </button>
+      {(state.status === "idle" || state.status === "error") && (
+        <button
+          type="button"
+          onClick={startScheduling}
+          className="text-xs text-gray-500 hover:text-gray-700"
+        >
+          Schedule for later
+        </button>
+      )}
 
-      {enabled && (
+      {state.status === "open" && (
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="datetime-local"
-            value={publishAt}
-            onChange={(e) => setPublishAt(e.target.value)}
-            className="border border-gray-300 rounded-md px-2 py-1 text-xs"
+            min={minimumPublishAt}
+            value={state.publishAt}
+            onChange={(event) => setState({ status: "open", publishAt: event.target.value })}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs"
           />
           <button
             type="button"
-            onClick={handleSchedule}
-            disabled={isScheduling || !publishAt}
-            className="text-xs bg-gray-900 text-white rounded-md px-2.5 py-1.5 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+            onClick={() => void submitSchedule()}
+            className="rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white"
           >
-            {isScheduling ? "Scheduling..." : "Schedule"}
+            Schedule
+          </button>
+          <button
+            type="button"
+            onClick={() => setState({ status: "idle" })}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            Cancel
           </button>
         </div>
       )}
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {state.status === "scheduling" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="datetime-local"
+            min={minimumPublishAt}
+            value={pendingPublishAt}
+            disabled
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs opacity-70"
+          />
+          <button
+            type="button"
+            disabled
+            className="rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white opacity-70"
+          >
+            Scheduling...
+          </button>
+        </div>
+      )}
+
+      {state.status === "error" && (
+        <div className="space-y-1">
+          <p className="text-xs text-red-600">{state.message}</p>
+          <button
+            type="button"
+            onClick={startScheduling}
+            className="text-xs text-red-600 underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
     </div>
   )
 }
