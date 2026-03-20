@@ -7,6 +7,48 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 })
 
+export const designRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, "1 h"),
+})
+
+export const layoutRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(15, "1 h"),
+})
+
+export const componentRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, "1 h"),
+})
+
+export const previewRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, "1 h"),
+})
+
+export const canvasRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(30, "1 h"),
+})
+
+export const siteRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, "1 h"),
+})
+
+export const structuredDataRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(20, "1 h"),
+  prefix: "relayweb:structured-data",
+})
+
+export const sitemapRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(30, "1 h"),
+  prefix: "relayweb:sitemap",
+})
+
 export const rateLimiters = {
   // Content update routes — 30 requests per hour per user
   contentUpdate: new Ratelimit({

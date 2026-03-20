@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { applySeoFieldUpdate } from "@/lib/content-mutations"
 import { prisma } from "@/lib/prisma"
+import { rateLimiters } from "@/lib/rate-limit"
 import { getScanLimit } from "@/lib/seo-limits"
 import Anthropic from "@anthropic-ai/sdk"
 import { NextRequest, NextResponse } from "next/server"
@@ -140,14 +141,17 @@ export async function POST(req: NextRequest) {
   }
 
   const scanLimit = getScanLimit(subscription.stripePriceId)
-  const isStarterByPrice = subscription.stripePriceId === process.env.STRIPE_PRICE_STARTER
-  const isStarterFallback = scanLimit === 5
 
-  if (isStarterByPrice || isStarterFallback) {
+  if (scanLimit === 5) {
     return NextResponse.json(
       { error: "Auto-fix is available on Growth and Pro plans." },
       { status: 403 }
     )
+  }
+
+  const rateLimitResult = await rateLimiters.seoAudit.limit(`relayweb:seo:${session.user.id}`)
+  if (!rateLimitResult.success) {
+    return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 })
   }
 
   if (!site.payloadUrl) {

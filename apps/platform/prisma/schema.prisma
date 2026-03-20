@@ -181,8 +181,12 @@ model Site {
   aiChatLogs       AiChatLog[]
   seoScans         SeoScan[]
   seoAudits        SEOAudit[]
-  designToken      DesignToken?
+  designTokens     DesignToken[]
   componentLibrary ComponentLibrary?
+  canvasLayouts    CanvasLayout[]
+  scriptInjections ScriptInjection[]
+  structuredData   StructuredData[]
+  sitemapEntries   SitemapEntry[]
   aiUsage          AIUsage?
 
   @@map("sites")
@@ -329,14 +333,16 @@ model SEOAudit {
 // ─── DESIGN TOKENS (TIER 2+) ──────────────────────────────────────────────────
 
 model DesignToken {
-  id         String   @id @default(cuid())
-  siteId     String   @unique
-  colors     Json     // { primary, secondary, accent, background, text, gradients[] }
-  fonts      Json     // { heading, body } — from curated pairs
-  updatedAt  DateTime @updatedAt
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  siteId    String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, key])
 
   @@map("design_tokens")
 }
@@ -368,6 +374,65 @@ model Component {
   library ComponentLibrary @relation(fields: [libraryId], references: [id], onDelete: Cascade)
 
   @@map("components")
+}
+
+model CanvasLayout {
+  id        String   @id @default(cuid())
+  siteId    String
+  pageSlug  String
+  layout    Json     // CanvasItem[] — validated before write
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, pageSlug])
+  @@map("canvas_layouts")
+}
+
+// ─── SCRIPT INJECTIONS (TIER 3) ───────────────────────────────────────────────
+
+model ScriptInjection {
+  id        String   @id @default(cuid())
+  siteId    String
+  name      String
+  src       String?
+  content   String?  @db.Text
+  placement String
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("script_injections")
+}
+
+model StructuredData {
+  id        String   @id @default(cuid())
+  siteId    String
+  pageSlug  String
+  schema    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, pageSlug])
+  @@map("structured_data")
+}
+
+model SitemapEntry {
+  id         String   @id @default(cuid())
+  siteId     String
+  pageSlug   String
+  include    Boolean  @default(true)
+  priority   Float    @default(0.5)
+  changefreq String   @default("weekly")
+  updatedAt  DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, pageSlug])
+  @@map("sitemap_entries")
 }
 
 // ─── AI USAGE TRACKING ────────────────────────────────────────────────────────

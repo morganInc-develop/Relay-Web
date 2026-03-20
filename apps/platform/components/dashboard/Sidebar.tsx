@@ -9,10 +9,12 @@ import {
   Blocks,
   FileText,
   Globe,
+  Layout,
   LayoutDashboard,
   Palette,
   Search,
   Settings,
+  Users,
 } from "lucide-react";
 
 import SignOutButton from "@/components/auth/SignOutButton";
@@ -89,9 +91,21 @@ export default function Sidebar({
       show: true,
     },
     {
+      label: "Team",
+      icon: Users,
+      href: "/dashboard/team",
+      show: true,
+    },
+    {
       label: "Design",
       icon: Palette,
       href: "/dashboard/design",
+      show: showDesign,
+    },
+    {
+      label: "Layout",
+      icon: Layout,
+      href: "/dashboard/layout",
       show: showDesign,
     },
     {

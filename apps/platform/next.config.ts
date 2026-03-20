@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  serverExternalPackages: ["@e2b/code-interpreter"],
   images: {
     remotePatterns: [
       {
