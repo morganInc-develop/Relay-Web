@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation"
+import { RiLockLine } from "react-icons/ri"
 
 import ComponentSwapper from "@/components/design/ComponentSwapper"
+import PageHeader from "@/components/dashboard/PageHeader"
 import SectionReorder from "@/components/design/SectionReorder"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import {
   DEFAULT_SECTION_ORDER,
   VALID_SECTION_TYPES,
@@ -24,14 +27,15 @@ export default async function LayoutPage() {
 
   if (!hasDesignAccess(subscription?.stripePriceId)) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="mb-2 text-2xl font-bold text-slate-900">Layout Controls Locked</h1>
-          <p className="text-sm text-slate-600">
+      <AnimatedPage className="rw-page-shell rw-page-shell--compact">
+        <div className="rw-card border-dashed p-8 text-center">
+          <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+          <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Layout Controls Locked</h1>
+          <p className="text-sm text-[var(--text-secondary)]">
             Upgrade to Tier 2 to unlock layout controls
           </p>
         </div>
-      </main>
+      </AnimatedPage>
     )
   }
 
@@ -83,15 +87,15 @@ export default async function LayoutPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="mb-2 text-2xl font-bold text-slate-900">Layout Controls</h1>
-      <p className="mb-8 text-sm text-slate-500">
-        Reorder sections and swap component variants. Changes trigger a site rebuild.
-      </p>
+    <AnimatedPage className="rw-page-shell space-y-8">
+      <PageHeader
+        title="Layout Controls"
+        description="Reorder site sections and switch layout variants without touching code."
+      />
 
-      <section>
-        <h2 className="text-xl font-bold text-slate-900">Section Order</h2>
-        <p className="mt-2 text-sm text-slate-500">
+      <section className="rw-card p-6">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Section Order</h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
           Drag to reorder. Changes trigger a site rebuild.
         </p>
         <div className="mt-6">
@@ -99,9 +103,9 @@ export default async function LayoutPage() {
         </div>
       </section>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-bold text-slate-900">Component Variants</h2>
-        <p className="mt-2 text-sm text-slate-500">
+      <section className="rw-card p-6">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Component Variants</h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
           Choose a layout variant for each section.
         </p>
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -119,6 +123,6 @@ export default async function LayoutPage() {
           ))}
         </div>
       </section>
-    </main>
+    </AnimatedPage>
   )
 }

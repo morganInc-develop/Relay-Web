@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { toast } from "sonner"
 
 interface StructuredDataEditorProps {
   initialSchema: Record<string, unknown> | null
@@ -33,7 +34,6 @@ export default function StructuredDataEditor({
     kind: "success" | "error"
     message: string
   } | null>(null)
-  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   useEffect(() => {
     setValue(formatEditorValue(initialSchema))
@@ -54,15 +54,13 @@ export default function StructuredDataEditor({
 
   const saveSchema = async () => {
     setSaving(true)
-    setToast(null)
 
     let parsed: unknown
     try {
       parsed = JSON.parse(value)
     } catch {
-      setToast({ kind: "error", message: "Invalid JSON" })
+      toast.error("Invalid JSON")
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
       return
     }
 
@@ -78,29 +76,26 @@ export default function StructuredDataEditor({
         throw new Error(data.error ?? "Failed to save structured data")
       }
 
-      setToast({ kind: "success", message: "Structured data saved." })
+      toast.success("Structured data saved.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message:
-          error instanceof Error ? error.message : "Failed to save structured data",
-      })
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save structured data"
+      )
     } finally {
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   return (
-    <div className="relative rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rw-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">Structured Data (JSON-LD)</h3>
-          <p className="mt-1 text-sm text-slate-500">
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">Structured Data (JSON-LD)</h3>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">
             Add schema.org markup to improve search appearance. Must include @context and @type.
           </p>
         </div>
-        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+        <span className="rw-pill">
           Page: {pageSlug}
         </span>
       </div>
@@ -110,16 +105,16 @@ export default function StructuredDataEditor({
         onChange={(event) => setValue(event.target.value)}
         rows={14}
         spellCheck={false}
-        className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-3 font-mono text-sm text-slate-900 shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+        className="rw-textarea mt-4 font-mono"
       />
 
       <div className="mt-2 flex items-center justify-between gap-4">
-        <p className="text-xs text-slate-500">{value.length} characters</p>
+        <p className="text-xs text-[var(--text-secondary)]">{value.length} characters</p>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={validateJson}
-            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            className="rw-btn rw-btn-secondary"
           >
             Validate JSON
           </button>
@@ -127,7 +122,7 @@ export default function StructuredDataEditor({
             type="button"
             onClick={() => void saveSchema()}
             disabled={saving}
-            className="inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rw-btn rw-btn-primary"
           >
             {saving ? "Saving..." : "Save"}
           </button>
@@ -138,23 +133,11 @@ export default function StructuredDataEditor({
         <div
           className={`mt-3 rounded-md border px-3 py-2 text-sm ${
             validation.kind === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-rose-200 bg-rose-50 text-rose-700"
+              ? "border-[color:rgba(34,197,94,0.3)] bg-[var(--success-bg)] text-[var(--success)]"
+              : "border-[color:rgba(239,68,68,0.3)] bg-[var(--error-bg)] text-[var(--error)]"
           }`}
         >
           {validation.message}
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div
-          className={`fixed bottom-6 right-6 rounded-md px-3 py-2 text-xs font-medium shadow-sm ${
-            toast.kind === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {toast.message}
         </div>
       ) : null}
     </div>

@@ -4,24 +4,24 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
+import StandaloneShell from "@/components/ui/StandaloneShell";
+
 function LoadingFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4">
-      <div className="w-full max-w-md text-center">
-        <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          RelayWeb
-        </p>
+    <StandaloneShell maxWidth="sm">
+      <div className="text-center">
+        <span className="rw-eyebrow justify-center">Relay Web</span>
         <div className="mt-8 flex justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--border-default)] border-t-[var(--accent-500)]" />
         </div>
-        <p className="mt-6 text-lg font-semibold text-slate-900">
+        <p className="mt-6 text-lg font-semibold text-[var(--text-primary)]">
           Setting up your checkout...
         </p>
-        <p className="mt-2 text-sm text-slate-500">
-          You&apos;ll be redirected to Stripe in a moment
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          You&apos;ll be redirected to Stripe in a moment.
         </p>
       </div>
-    </div>
+    </StandaloneShell>
   );
 }
 
@@ -106,45 +106,30 @@ function CheckoutPageInner() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white px-4">
-        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            RelayWeb
-          </p>
-          <h1 className="mt-4 text-xl font-semibold text-slate-900">
+      <StandaloneShell maxWidth="sm">
+        <div className="text-center">
+          <span className="rw-eyebrow justify-center">Relay Web</span>
+          <h1 className="mt-5 text-xl font-semibold text-[var(--text-primary)]">
             Checkout setup failed
           </h1>
-          <p className="mt-2 text-sm text-red-600">{error}</p>
+          <p className="mt-3 rounded-xl border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] px-4 py-3 text-sm text-[var(--error)]">
+            {error}
+          </p>
           <button
             type="button"
             onClick={() => router.push("/onboarding")}
-            className="mt-6 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            className="rw-btn rw-btn-primary mt-6"
           >
             Go back
           </button>
         </div>
-      </div>
+      </StandaloneShell>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white px-4">
-        <div className="w-full max-w-md text-center">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            RelayWeb
-          </p>
-          <div className="mt-8 flex justify-center">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" />
-          </div>
-          <p className="mt-6 text-lg font-semibold text-slate-900">
-            Setting up your checkout...
-          </p>
-          <p className="mt-2 text-sm text-slate-500">
-            You&apos;ll be redirected to Stripe in a moment
-          </p>
-        </div>
-      </div>
+      <LoadingFallback />
     );
   }
 

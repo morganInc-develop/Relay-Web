@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation"
+import { RiLockLine } from "react-icons/ri"
 
 import { auth } from "@/lib/auth"
 import DesignTokensClient from "@/components/design/DesignTokensClient"
+import PageHeader from "@/components/dashboard/PageHeader"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import { hasDesignAccess } from "@/lib/design-tier"
 import { DEFAULT_FONT_PAIR_ID } from "@/lib/font-pairs"
 import { prisma } from "@/lib/prisma"
@@ -43,14 +46,15 @@ export default async function DesignPage() {
 
   if (!hasDesignAccess(subscription?.stripePriceId)) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="mb-2 text-2xl font-bold text-slate-900">Design Controls Locked</h1>
-          <p className="text-sm text-slate-600">
+      <AnimatedPage className="rw-page-shell rw-page-shell--compact">
+        <div className="rw-card border-dashed p-8 text-center">
+          <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+          <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Design Controls Locked</h1>
+          <p className="text-sm text-[var(--text-secondary)]">
             Upgrade to Tier 2 to unlock design controls.
           </p>
         </div>
-      </main>
+      </AnimatedPage>
     )
   }
 
@@ -76,17 +80,17 @@ export default async function DesignPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="mb-2 text-2xl font-bold text-slate-900">Design Tokens</h1>
-      <p className="mb-8 text-sm text-slate-500">
-        Update your brand colors and gradients. Saving a token triggers a site rebuild.
-      </p>
+    <AnimatedPage className="rw-page-shell space-y-8">
+      <PageHeader
+        title="Design Tokens"
+        description="Set brand colors, gradients, and typography, then preview the live surface before publishing."
+      />
       <DesignTokensClient
         tokenMap={tokenMap}
         siteUrl={site.domain ? `https://${site.domain}` : null}
         tokenDefinitions={tokenDefinitions}
         defaultFontPairId={DEFAULT_FONT_PAIR_ID}
       />
-    </main>
+    </AnimatedPage>
   )
 }

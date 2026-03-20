@@ -2,7 +2,12 @@
 
 import ScheduledPublish from "@/components/content/ScheduledPublish"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Check, Clock3, RotateCcw, Save } from "lucide-react"
+import {
+  RiCheckboxCircleLine,
+  RiHistoryLine,
+  RiRefreshLine,
+  RiSaveLine,
+} from "react-icons/ri"
 
 interface ContentEditorProps {
   siteId: string
@@ -346,23 +351,23 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-10">
-        <div className="w-7 h-7 rounded-full border-4 border-gray-200 border-t-gray-900 animate-spin" />
+        <div className="h-7 w-7 animate-spin rounded-full border-4 border-[var(--border-default)] border-t-[var(--accent-500)]" />
       </div>
     )
   }
 
   if (globalError) {
-    return <p className="text-sm text-red-600">{globalError}</p>
+    return <p className="text-sm text-[var(--error)]">{globalError}</p>
   }
 
   if (pages.length === 0) {
-    return <p className="text-sm text-gray-500">No pages found in the connected Payload site.</p>
+    return <p className="text-sm text-[var(--text-secondary)]">No pages found in the connected Payload site.</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-gray-700">Page</label>
+        <label className="text-sm font-medium text-[var(--text-secondary)]">Page</label>
         <select
           value={selectedPage}
           onChange={async (e) => {
@@ -370,7 +375,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
             setSelectedPage(slug)
             await loadPage(slug)
           }}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          className="rw-select w-auto min-w-52"
         >
           {pages.map((page) => (
             <option key={page.slug} value={page.slug}>
@@ -380,23 +385,23 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
         </select>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-[var(--border-subtle)]">
         <button
           onClick={() => setActiveTab("text")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 ${
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
             activeTab === "text"
-              ? "border-gray-900 text-gray-900"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              ? "border-[var(--border-accent)] text-[var(--text-primary)]"
+              : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           }`}
         >
           Text Fields
         </button>
         <button
           onClick={() => setActiveTab("seo")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 ${
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition ${
             activeTab === "seo"
-              ? "border-gray-900 text-gray-900"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+              ? "border-[var(--border-accent)] text-[var(--text-primary)]"
+              : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           }`}
         >
           SEO Fields
@@ -404,8 +409,8 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
       </div>
 
       {loadingPage ? (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <div className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-900 animate-spin" />
+        <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-500)]" />
           Loading page fields...
         </div>
       ) : (
@@ -419,11 +424,11 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
               const previewUrl = imagePreviewUrls[fieldKey]
 
               return (
-                <div key={fieldKey} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                <div key={fieldKey} className="rw-card p-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-gray-800">{fieldKey}</p>
+                    <p className="text-sm font-medium text-[var(--text-primary)]">{fieldKey}</p>
                     {typeof versionsRemaining[fieldKey] === "number" && (
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-[var(--text-secondary)]">
                         {versionsRemaining[fieldKey]} versions remaining
                       </span>
                     )}
@@ -434,18 +439,18 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                       value={value}
                       onChange={(e) => setFieldValue(fieldKey, e.target.value)}
                       rows={4}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      className="rw-textarea min-h-[120px]"
                     />
                   ) : (
                     <input
                       value={value}
                       onChange={(e) => setFieldValue(fieldKey, e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      className="rw-input"
                     />
                   )}
 
                   {previewUrl && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={previewUrl}
@@ -459,23 +464,23 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                     <button
                       onClick={() => saveTextField(fieldKey)}
                       disabled={isSaving}
-                      className="inline-flex items-center gap-1.5 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-md hover:bg-gray-700 disabled:opacity-50"
+                      className="rw-btn rw-btn-primary px-3 py-1.5 text-xs"
                     >
-                      <Save className="w-3.5 h-3.5" />
+                      <RiSaveLine className="h-3.5 w-3.5" />
                       {isSaving ? "Saving..." : "Save"}
                     </button>
                     <button
                       onClick={() =>
                         setHistoryOpenField((current) => (current === fieldKey ? null : fieldKey))
                       }
-                      className="inline-flex items-center gap-1.5 text-xs text-gray-600 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50"
+                      className="rw-btn rw-btn-secondary px-3 py-1.5 text-xs"
                     >
-                      <Clock3 className="w-3.5 h-3.5" />
+                      <RiHistoryLine className="h-3.5 w-3.5" />
                       History
                     </button>
                     {isSaved && (
-                      <span className="inline-flex items-center gap-1 text-xs text-green-700">
-                        <Check className="w-3.5 h-3.5" />
+                      <span className="inline-flex items-center gap-1 text-xs text-[var(--success)]">
+                        <RiCheckboxCircleLine className="h-3.5 w-3.5" />
                         Saved
                       </span>
                     )}
@@ -484,27 +489,27 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                   <ScheduledPublish page={selectedPage} field={fieldKey} value={value} />
 
                   {historyOpenField === fieldKey && (
-                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
-                      <p className="text-xs font-semibold text-gray-600">Version History</p>
+                    <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
+                      <p className="text-xs font-semibold text-[var(--text-secondary)]">Version History</p>
                       {fieldVersions.length === 0 ? (
-                        <p className="text-xs text-gray-500">No versions yet.</p>
+                        <p className="text-xs text-[var(--text-muted)]">No versions yet.</p>
                       ) : (
                         fieldVersions.slice(0, 10).map((version) => (
                           <div
                             key={version.id}
-                            className="border border-gray-200 bg-white rounded-md p-2 space-y-1"
+                            className="rounded-md border border-[var(--border-default)] bg-[var(--bg-surface)] p-2 space-y-1"
                           >
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-[var(--text-muted)]">
                               {new Date(version.createdAt).toLocaleString()}
                             </p>
-                            <p className="text-xs text-gray-700">
+                            <p className="text-xs text-[var(--text-secondary)]">
                               Previous: <span className="font-medium">{version.oldValue}</span>
                             </p>
                             <button
                               onClick={() => revertVersion(fieldKey, version.id)}
-                              className="inline-flex items-center gap-1 text-xs text-gray-700 border border-gray-300 rounded-md px-2 py-1 hover:bg-gray-50"
+                              className="rw-btn rw-btn-secondary px-2 py-1 text-xs"
                             >
-                              <RotateCcw className="w-3 h-3" />
+                              <RiRefreshLine className="h-3 w-3" />
                               Revert
                             </button>
                           </div>
@@ -513,7 +518,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                     </div>
                   )}
 
-                  {fieldErrors[fieldKey] && <p className="text-xs text-red-600">{fieldErrors[fieldKey]}</p>}
+                  {fieldErrors[fieldKey] && <p className="text-xs text-[var(--error)]">{fieldErrors[fieldKey]}</p>}
                 </div>
               )
             })}
@@ -528,19 +533,19 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
               const previewUrl = imagePreviewUrls[seoField.key]
 
               return (
-                <div key={seoField.key} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                <div key={seoField.key} className="rw-card p-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-gray-800">{seoField.label}</p>
+                    <p className="text-sm font-medium text-[var(--text-primary)]">{seoField.label}</p>
                     <div className="flex items-center gap-2">
                       {typeof seoField.max === "number" && (
                         <span
-                          className={`text-xs ${overLimit ? "text-red-600 font-semibold" : "text-gray-500"}`}
+                          className={`text-xs ${overLimit ? "font-semibold text-[var(--error)]" : "text-[var(--text-secondary)]"}`}
                         >
                           {value.length}/{seoField.max}
                         </span>
                       )}
                       {typeof versionsRemaining[seoField.key] === "number" && (
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-[var(--text-secondary)]">
                           {versionsRemaining[seoField.key]} versions remaining
                         </span>
                       )}
@@ -552,18 +557,18 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                       value={value}
                       onChange={(e) => setFieldValue(seoField.key, e.target.value)}
                       rows={3}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      className="rw-textarea min-h-[120px]"
                     />
                   ) : (
                     <input
                       value={value}
                       onChange={(e) => setFieldValue(seoField.key, e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      className="rw-input"
                     />
                   )}
 
                   {previewUrl && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={previewUrl}
@@ -577,9 +582,9 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                     <button
                       onClick={() => saveSeoField(seoField.key, seoField.apiField)}
                       disabled={isSaving}
-                      className="inline-flex items-center gap-1.5 bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-md hover:bg-gray-700 disabled:opacity-50"
+                      className="rw-btn rw-btn-primary px-3 py-1.5 text-xs"
                     >
-                      <Save className="w-3.5 h-3.5" />
+                      <RiSaveLine className="h-3.5 w-3.5" />
                       {isSaving ? "Saving..." : "Save"}
                     </button>
                     <button
@@ -588,14 +593,14 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                           current === seoField.key ? null : seoField.key
                         )
                       }
-                      className="inline-flex items-center gap-1.5 text-xs text-gray-600 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50"
+                      className="rw-btn rw-btn-secondary px-3 py-1.5 text-xs"
                     >
-                      <Clock3 className="w-3.5 h-3.5" />
+                      <RiHistoryLine className="h-3.5 w-3.5" />
                       History
                     </button>
                     {isSaved && (
-                      <span className="inline-flex items-center gap-1 text-xs text-green-700">
-                        <Check className="w-3.5 h-3.5" />
+                      <span className="inline-flex items-center gap-1 text-xs text-[var(--success)]">
+                        <RiCheckboxCircleLine className="h-3.5 w-3.5" />
                         Saved
                       </span>
                     )}
@@ -604,27 +609,27 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                   <ScheduledPublish page={selectedPage} field={seoField.key} value={value} />
 
                   {historyOpenField === seoField.key && (
-                    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50 space-y-2">
-                      <p className="text-xs font-semibold text-gray-600">Version History</p>
+                    <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
+                      <p className="text-xs font-semibold text-[var(--text-secondary)]">Version History</p>
                       {fieldVersions.length === 0 ? (
-                        <p className="text-xs text-gray-500">No versions yet.</p>
+                        <p className="text-xs text-[var(--text-muted)]">No versions yet.</p>
                       ) : (
                         fieldVersions.slice(0, 10).map((version) => (
                           <div
                             key={version.id}
-                            className="border border-gray-200 bg-white rounded-md p-2 space-y-1"
+                            className="rounded-md border border-[var(--border-default)] bg-[var(--bg-surface)] p-2 space-y-1"
                           >
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-[var(--text-muted)]">
                               {new Date(version.createdAt).toLocaleString()}
                             </p>
-                            <p className="text-xs text-gray-700">
+                            <p className="text-xs text-[var(--text-secondary)]">
                               Previous: <span className="font-medium">{version.oldValue}</span>
                             </p>
                             <button
                               onClick={() => revertVersion(seoField.key, version.id)}
-                              className="inline-flex items-center gap-1 text-xs text-gray-700 border border-gray-300 rounded-md px-2 py-1 hover:bg-gray-50"
+                              className="rw-btn rw-btn-secondary px-2 py-1 text-xs"
                             >
-                              <RotateCcw className="w-3 h-3" />
+                              <RiRefreshLine className="h-3 w-3" />
                               Revert
                             </button>
                           </div>
@@ -634,7 +639,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                   )}
 
                   {fieldErrors[seoField.key] && (
-                    <p className="text-xs text-red-600">{fieldErrors[seoField.key]}</p>
+                    <p className="text-xs text-[var(--error)]">{fieldErrors[seoField.key]}</p>
                   )}
                 </div>
               )

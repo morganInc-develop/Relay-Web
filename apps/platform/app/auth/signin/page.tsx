@@ -3,6 +3,9 @@
 import { Suspense, useEffect, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { RiShieldCheckLine } from "react-icons/ri";
+
+import StandaloneShell from "@/components/ui/StandaloneShell";
 
 function GoogleLogo() {
   return (
@@ -30,7 +33,7 @@ function GoogleLogo() {
 function Spinner() {
   return (
     <svg
-      className="h-5 w-5 animate-spin text-slate-700"
+      className="h-5 w-5 animate-spin text-[var(--text-primary)]"
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
       viewBox="0 0 24 24"
@@ -58,26 +61,12 @@ function SignInForm() {
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUrl] = useState(() =>
-    typeof window !== "undefined" ? window.location.href : ""
-  );
 
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
   const errorParam = searchParams.get("error");
 
   useEffect(() => {
-    console.log("[signin] page mounted");
-    console.log("[signin] callbackUrl:", callbackUrl);
-    console.log("[signin] error param:", errorParam ?? "none");
-    console.log("[signin] window.location.href:", window.location.href);
-    console.log("[signin] window.location.origin:", window.location.origin);
-  }, [callbackUrl, errorParam]);
-
-  useEffect(() => {
-    console.log("[signin] session status changed:", status);
-    console.log("[signin] session data:", session);
     if (status === "authenticated") {
-      console.log("[signin] already authenticated, redirecting to", callbackUrl);
       router.replace(callbackUrl);
     }
   }, [router, status, callbackUrl, session]);
@@ -85,96 +74,54 @@ function SignInForm() {
   const handleGoogleSignIn = async () => {
     if (isLoading) return;
 
-    console.log("[signin] Google sign-in initiated");
-    console.log("[signin] callbackUrl:", callbackUrl);
-    console.log("[signin] window.location.origin:", window.location.origin);
     setIsLoading(true);
     try {
       const result = await signIn("google", { callbackUrl, redirect: false });
-      console.log("[signin] signIn() result:", result);
-      if (result?.error) {
-        console.error("[signin] signIn() returned error:", result.error);
-      }
+
       if (result?.url) {
-        console.log("[signin] redirecting to:", result.url);
         window.location.href = result.url;
+        return;
       }
     } catch (error) {
-      console.error("[signin] Google sign-in threw:", error);
-      setIsLoading(false);
+      void error;
     }
+
+    setIsLoading(false);
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="w-full max-w-md space-y-4">
-        {/* DEBUG PANEL */}
-        <details className="rounded-xl border-2 border-yellow-400 bg-yellow-50 p-4 text-xs" open>
-          <summary className="cursor-pointer font-bold text-yellow-800">
-            🐛 DEBUG — Sign-in Page (click to collapse)
-          </summary>
-          <table className="mt-3 w-full border-collapse font-mono">
-            <tbody>
-              <tr className="border-t border-yellow-200">
-                <td className="py-1 pr-4 text-slate-600">Session status</td>
-                <td className={`py-1 font-bold ${status === "authenticated" ? "text-green-700" : status === "loading" ? "text-yellow-600" : "text-red-600"}`}>
-                  {status}
-                </td>
-              </tr>
-              <tr className="border-t border-yellow-200">
-                <td className="py-1 pr-4 text-slate-600">Session user</td>
-                <td className="py-1 text-slate-800">{session?.user?.email ?? "none"}</td>
-              </tr>
-              <tr className="border-t border-yellow-200">
-                <td className="py-1 pr-4 text-slate-600">callbackUrl param</td>
-                <td className="py-1 text-slate-800">{callbackUrl}</td>
-              </tr>
-              <tr className="border-t border-yellow-200">
-                <td className="py-1 pr-4 text-slate-600">error param</td>
-                <td className={`py-1 font-bold ${errorParam ? "text-red-600" : "text-slate-400"}`}>
-                  {errorParam ?? "none"}
-                </td>
-              </tr>
-              <tr className="border-t border-yellow-200">
-                <td className="py-1 pr-4 text-slate-600">current URL</td>
-                <td className="break-all py-1 text-slate-800">{currentUrl}</td>
-              </tr>
-            </tbody>
-          </table>
-        </details>
-
-        {/* Original sign-in card */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <div className="text-center">
-            <p className="text-2xl font-bold tracking-tight text-slate-900">
-              RelayWeb
-            </p>
-            <h1 className="mt-6 text-2xl font-semibold text-slate-900">
-              Sign in to RelayWeb
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Manage your website from one place
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={isLoading}
-            className={`mt-8 flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed ${
-              isLoading ? "opacity-60" : "opacity-100"
-            }`}
-          >
-            {isLoading ? <Spinner /> : <GoogleLogo />}
-            {isLoading ? "Redirecting..." : "Continue with Google"}
-          </button>
-
-          <p className="mt-8 text-center text-xs text-slate-500">
-            By signing in you agree to our terms of service
-          </p>
-        </div>
+    <StandaloneShell maxWidth="sm">
+      <div className="text-center">
+        <span className="rw-eyebrow justify-center">Relay Web</span>
+        <h1 className="mt-5 text-3xl font-semibold text-[var(--text-primary)]">
+          Sign in to your workspace
+        </h1>
+        <p className="mt-3 text-sm text-[var(--text-secondary)]">
+          Access content, SEO, design, and billing controls from a single dashboard.
+        </p>
       </div>
-    </div>
+
+      {errorParam ? (
+        <div className="mt-6 rounded-xl border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] px-4 py-3 text-left text-sm text-[var(--error)]">
+          We couldn&apos;t complete sign-in. Please try again.
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={handleGoogleSignIn}
+        disabled={isLoading}
+        className="rw-btn rw-btn-secondary mt-8 w-full justify-center py-3 text-sm"
+      >
+        {isLoading ? <Spinner /> : <GoogleLogo />}
+        {isLoading ? "Redirecting..." : "Continue with Google"}
+      </button>
+
+      <div className="mt-8 flex items-center justify-center gap-2 text-xs text-[var(--text-muted)]">
+        <RiShieldCheckLine className="h-4 w-4" />
+        <span>Google OAuth only. Your existing workspace email will be matched automatically.</span>
+      </div>
+    </StandaloneShell>
   );
 }
 
@@ -182,9 +129,12 @@ export default function SignInPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-slate-100">
-          <Spinner />
-        </div>
+        <StandaloneShell maxWidth="sm">
+          <div className="flex flex-col items-center justify-center gap-4 py-6 text-center">
+            <Spinner />
+            <p className="text-sm text-[var(--text-secondary)]">Loading sign-in...</p>
+          </div>
+        </StandaloneShell>
       }
     >
       <SignInForm />

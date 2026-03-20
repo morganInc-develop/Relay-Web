@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { RiRefreshLine } from "react-icons/ri"
 
 /**
  * RELAY_DESIGN_PREVIEW postMessage protocol
@@ -37,13 +38,13 @@ export default function PreviewFrame({ siteUrl, cssVars }: PreviewFrameProps) {
 
   if (!siteUrl) {
     return (
-      <div className="sticky top-6 h-[calc(100vh-6rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="rw-card sticky top-6 h-[calc(100vh-6rem)] overflow-hidden">
         <div className="flex h-full items-center justify-center p-6 text-center">
           <div>
-            <p className="text-sm font-semibold text-slate-900">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
               Connect your domain to enable live preview
             </p>
-            <p className="mt-2 text-sm text-slate-500">
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
               Live preview becomes available once your site has a connected domain.
             </p>
           </div>
@@ -53,25 +54,25 @@ export default function PreviewFrame({ siteUrl, cssVars }: PreviewFrameProps) {
   }
 
   return (
-    <div className="sticky top-6 flex h-[calc(100vh-6rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <p className="truncate pr-4 text-xs text-slate-500">{siteUrl}</p>
+    <div className="rw-card sticky top-6 flex h-[calc(100vh-6rem)] flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+        <p className="truncate pr-4 text-xs text-[var(--text-secondary)]">{siteUrl}</p>
         <button
           type="button"
           onClick={() => {
             setLoaded(false)
             iframeRef.current?.contentWindow?.location?.reload()
           }}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-sm text-slate-600 transition hover:bg-slate-50"
+          className="rw-btn rw-btn-secondary h-8 w-8 p-0"
           aria-label="Refresh preview"
         >
-          ↺
+          <RiRefreshLine size={16} />
         </button>
       </div>
 
       <div className="relative min-h-0 flex-1">
         {!loaded ? (
-          <div className="absolute inset-x-0 top-0 z-10 border-b border-slate-100 bg-white/90 px-4 py-2 text-xs text-slate-500">
+          <div className="absolute inset-x-0 top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)]/90 px-4 py-2 text-xs text-[var(--text-secondary)]">
             Loading preview...
           </div>
         ) : null}

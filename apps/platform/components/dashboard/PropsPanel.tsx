@@ -22,16 +22,16 @@ export default function PropsPanel({
   }
 
   return (
-    <aside className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <aside className="rw-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">{def.displayName} Props</h3>
-          <p className="mt-1 text-xs text-slate-500">Update values to change the canvas preview immediately.</p>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{def.displayName} Props</h3>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Update values to change the canvas preview immediately.</p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+          className="rw-btn rw-btn-ghost px-3 py-2 text-xs"
         >
           Close
         </button>
@@ -40,20 +40,20 @@ export default function PropsPanel({
       <div className="mt-4 space-y-4">
         {def.editableProps.map((prop) => (
           <label key={prop.key} className="block">
-            <span className="mb-1 block text-xs font-medium text-slate-700">{prop.label}</span>
+            <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">{prop.label}</span>
             {prop.inputType === "text" ? (
               <input
                 type="text"
                 value={currentProps[prop.key] ?? ""}
                 onChange={(event) => onUpdate(prop.key, event.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className="rw-input"
               />
             ) : null}
             {prop.inputType === "select" ? (
               <select
                 value={currentProps[prop.key] ?? ""}
                 onChange={(event) => onUpdate(prop.key, event.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className="rw-select"
               >
                 {(prop.options ?? []).map((option) => (
                   <option key={option} value={option}>
@@ -67,7 +67,7 @@ export default function PropsPanel({
                 type="color"
                 value={currentProps[prop.key] ?? "#000000"}
                 onChange={(event) => onUpdate(prop.key, event.target.value)}
-                className="h-10 w-full rounded-md border border-slate-300 bg-white p-1 shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className="h-10 w-full rounded-md border border-[var(--border-default)] bg-[var(--bg-elevated)] p-1"
               />
             ) : null}
           </label>

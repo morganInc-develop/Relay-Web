@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { toast } from "sonner"
 
 type Tier = "TIER1" | "TIER2" | "TIER3"
 
@@ -165,6 +166,7 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
     }
 
     setState({ status: "scanning" })
+    const toastId = toast.loading("Running SEO audit...")
 
     try {
       const response = await fetch("/api/seo/audit", {
@@ -193,11 +195,14 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
         page: selectedPage,
         keywords: [...keywords],
       })
+      toast.success("SEO audit complete.", { id: toastId })
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Audit failed"
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "Audit failed",
+        message,
       })
+      toast.error(message, { id: toastId })
     }
   }
 
@@ -206,6 +211,7 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
     if (!canAutoFix) return
 
     setState({ status: "fixing" })
+    const toastId = toast.loading("Applying SEO auto-fix...")
 
     try {
       const pageResponse = await fetch(`/api/content/get-page?slug=${encodeURIComponent(state.page)}`, {
@@ -237,24 +243,27 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
       }
 
       setState({ status: "fixed", fixedFields: data.fixed ?? [] })
+      toast.success("SEO auto-fix complete.", { id: toastId })
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Auto-fix failed"
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "Auto-fix failed",
+        message,
       })
+      toast.error(message, { id: toastId })
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-gray-200 p-4 space-y-4">
+      <div className="rw-card p-4 space-y-4">
         <div className="space-y-1">
-          <label className="text-sm font-medium text-gray-700">Page</label>
+          <label className="text-sm font-medium text-[var(--text-secondary)]">Page</label>
           <select
             value={selectedPage}
             disabled={pageLoading || pages.length === 0 || state.status === "scanning" || state.status === "fixing"}
             onChange={(event) => setSelectedPage(event.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            className="rw-select"
           >
             {pages.map((page) => (
               <option key={page.slug} value={page.slug}>
@@ -265,13 +274,13 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-gray-700">Keywords</label>
+          <label className="text-sm font-medium text-[var(--text-secondary)]">Keywords</label>
 
           <div className="flex flex-wrap gap-2">
             {keywords.map((keyword) => (
               <span
                 key={keyword}
-                className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-50 px-2.5 py-1 text-xs"
+                className="rw-pill"
               >
                 {keyword}
                 <button type="button" onClick={() => removeKeyword(keyword)}>
@@ -291,31 +300,31 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
               }
             }}
             placeholder="Type a keyword and press Enter"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            className="rw-input"
           />
 
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--text-secondary)]">
             Keywords: {keywords.length}/{keywordLimit}
           </p>
-          {keywordWarning && <p className="text-xs text-amber-600">{keywordWarning}</p>}
+          {keywordWarning && <p className="text-xs text-[var(--warning)]">{keywordWarning}</p>}
         </div>
 
         <button
           type="button"
           onClick={() => void runAudit()}
           disabled={state.status === "scanning" || state.status === "fixing" || pageLoading}
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="rw-btn rw-btn-primary"
         >
           {state.status === "scanning" ? "Scanning..." : "Run Audit"}
         </button>
       </div>
 
       {state.status === "results" && (
-        <div className="rounded-xl border border-gray-200 p-4 space-y-4">
+        <div className="rw-card p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-gray-900">Audit Results</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Audit Results</h3>
             {state.scansRemaining !== null && (
-              <span className="text-xs text-gray-500">Scans remaining: {state.scansRemaining}</span>
+              <span className="text-xs text-[var(--text-secondary)]">Scans remaining: {state.scansRemaining}</span>
             )}
           </div>
 
@@ -344,8 +353,8 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
           </div>
 
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-gray-900">Recommendations</h4>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-gray-700">
+            <h4 className="text-sm font-medium text-[var(--text-primary)]">Recommendations</h4>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--text-secondary)]">
               {state.recommendations.map((recommendation, index) => (
                 <li key={`${recommendation}-${index}`}>{recommendation}</li>
               ))}
@@ -356,7 +365,7 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
             <button
               type="button"
               onClick={() => void runAutoFix()}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+              className="rw-btn rw-btn-primary"
             >
               Auto-Fix
             </button>
@@ -365,8 +374,8 @@ export default function SeoAudit({ tier }: SeoAuditProps) {
       )}
 
       {state.status === "fixing" && (
-        <div className="rounded-xl border border-gray-200 p-4">
-          <p className="text-sm text-gray-600">Fixing...</p>
+        <div className="rw-card p-4">
+          <p className="text-sm text-[var(--text-secondary)]">Fixing...</p>
         </div>
       )}
 

@@ -85,17 +85,17 @@ export default function OnboardingCheckout({ plans, sessionId }: OnboardingCheck
 
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-900">Step 1: Choose a plan</h2>
-      <p className="text-sm text-slate-600">Start your subscription to continue onboarding.</p>
+      <h2 className="text-lg font-semibold text-[var(--text-primary)]">Step 1: Choose a plan</h2>
+      <p className="text-sm text-[var(--text-secondary)]">Start your subscription to continue onboarding.</p>
 
       {processingSession && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+        <div className="rounded-lg border border-[color:rgba(96,165,250,0.24)] bg-[color:rgba(59,130,246,0.12)] p-4 text-sm text-[var(--accent-500)]">
           Finalizing your checkout session. This may take a few seconds...
         </div>
       )}
 
       {!canStartCheckout && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] p-4 text-sm text-[var(--error)]">
           Stripe price IDs are not configured. Set STRIPE_PRICE_STARTER, STRIPE_PRICE_GROWTH, and
           STRIPE_PRICE_PRO.
         </div>
@@ -106,14 +106,14 @@ export default function OnboardingCheckout({ plans, sessionId }: OnboardingCheck
           const isLoading = startingPriceId === plan.priceId
 
           return (
-            <article key={plan.key} className="rounded-xl border border-slate-200 bg-white p-5">
-              <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
-              <p className="mt-1 text-sm text-slate-600">{plan.price}</p>
+            <article key={plan.key} className="rw-card-interactive rw-card h-full p-5">
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">{plan.name}</h3>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">{plan.price}</p>
 
-              <ul className="mt-4 space-y-2 text-xs text-slate-600">
+              <ul className="mt-4 space-y-2 text-xs text-[var(--text-secondary)]">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex gap-2">
-                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[var(--accent-500)]" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -123,7 +123,7 @@ export default function OnboardingCheckout({ plans, sessionId }: OnboardingCheck
                 type="button"
                 onClick={() => void startCheckout(plan.priceId)}
                 disabled={Boolean(startingPriceId) || !plan.priceId || !canStartCheckout || processingSession}
-                className="mt-5 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                className="rw-btn rw-btn-primary mt-5 w-full"
               >
                 {isLoading ? "Redirecting..." : "Select plan"}
               </button>
@@ -133,7 +133,7 @@ export default function OnboardingCheckout({ plans, sessionId }: OnboardingCheck
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] p-4 text-sm text-[var(--error)]">{error}</div>
       )}
     </section>
   )

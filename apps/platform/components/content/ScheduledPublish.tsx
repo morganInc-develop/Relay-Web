@@ -84,7 +84,7 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
 
   if (state.status === "scheduled") {
     return (
-      <span className="inline-flex items-center gap-2 rounded-full border border-gray-300 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
+      <span className="rw-pill">
         Scheduled for {new Date(state.publishAt).toLocaleString()}
         <button type="button" onClick={() => setState({ status: "idle" })} aria-label="Clear schedule badge">
           ×
@@ -99,7 +99,7 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
         <button
           type="button"
           onClick={startScheduling}
-          className="text-xs text-gray-500 hover:text-gray-700"
+          className="text-xs text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
         >
           Schedule for later
         </button>
@@ -112,19 +112,19 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
             min={minimumPublishAt}
             value={state.publishAt}
             onChange={(event) => setState({ status: "open", publishAt: event.target.value })}
-            className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+            className="rw-input w-auto min-w-60 px-2 py-1.5 text-xs"
           />
           <button
             type="button"
             onClick={() => void submitSchedule()}
-            className="rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white"
+            className="rw-btn rw-btn-primary px-2.5 py-1.5 text-xs"
           >
             Schedule
           </button>
           <button
             type="button"
             onClick={() => setState({ status: "idle" })}
-            className="text-xs text-gray-500 hover:text-gray-700"
+            className="text-xs text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
           >
             Cancel
           </button>
@@ -138,12 +138,12 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
             min={minimumPublishAt}
             value={pendingPublishAt}
             disabled
-            className="rounded-md border border-gray-300 px-2 py-1 text-xs opacity-70"
+            className="rw-input w-auto min-w-60 px-2 py-1.5 text-xs opacity-70"
           />
           <button
             type="button"
             disabled
-            className="rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white opacity-70"
+            className="rw-btn rw-btn-primary px-2.5 py-1.5 text-xs opacity-70"
           >
             Scheduling...
           </button>
@@ -152,11 +152,11 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
 
       {state.status === "error" && (
         <div className="space-y-1">
-          <p className="text-xs text-red-600">{state.message}</p>
+          <p className="text-xs text-[var(--error)]">{state.message}</p>
           <button
             type="button"
             onClick={startScheduling}
-            className="text-xs text-red-600 underline"
+            className="text-xs text-[var(--error)] underline"
           >
             Retry
           </button>

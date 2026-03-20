@@ -46,12 +46,12 @@ export default function CanvasPageSelector({
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <label className="text-sm font-medium text-slate-700">Page</label>
+        <label className="text-sm font-medium text-[var(--text-secondary)]">Page</label>
         <select
           value={pageSlug}
           onChange={(event) => void handlePageChange(event.target.value)}
           disabled={loadingCanvas}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          className="rw-select w-auto min-w-44 py-2"
         >
           {pages.map((page) => (
             <option key={page.slug} value={page.slug}>
@@ -59,7 +59,7 @@ export default function CanvasPageSelector({
             </option>
           ))}
         </select>
-        {loadingCanvas ? <span className="text-xs text-slate-400">Loading...</span> : null}
+        {loadingCanvas ? <span className="text-xs text-[var(--text-muted)]">Loading...</span> : null}
       </div>
 
       <ComponentCanvas key={pageSlug} pageSlug={pageSlug} initialLayout={layout} />

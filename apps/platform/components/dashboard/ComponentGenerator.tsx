@@ -3,6 +3,7 @@
 import { javascript } from "@codemirror/lang-javascript"
 import CodeMirror from "@uiw/react-codemirror"
 import { useState } from "react"
+import { toast } from "sonner"
 
 interface ComponentGeneratorProps {
   initialComponents: Array<{
@@ -71,11 +72,10 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
   const [previewResults, setPreviewResults] = useState<
     Record<string, { safe: boolean; error?: string }>
   >({})
-  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   const generateComponent = async () => {
     setGenerating(true)
-    setToast(null)
+    const toastId = toast.loading("Generating component with AI...")
 
     try {
       const response = await fetch("/api/components/generate", {
@@ -114,28 +114,24 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
       setDescription("")
 
       if (!data.approved) {
-        setToast({
-          kind: "error",
-          message: data.failReason ?? "Component was saved but failed safety analysis.",
+        toast.error(data.failReason ?? "Component was saved but failed safety analysis.", {
+          id: toastId,
         })
         return
       }
 
-      setToast({ kind: "success", message: "Component generated and saved to your library." })
+      toast.success("Component generated and saved to your library.", { id: toastId })
     } catch (error) {
-      setToast({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to generate component",
+      toast.error(error instanceof Error ? error.message : "Failed to generate component", {
+        id: toastId,
       })
     } finally {
       setGenerating(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   const deleteComponent = async (id: string) => {
     setDeleting(id)
-    setToast(null)
 
     try {
       const response = await fetch(`/api/components/${id}`, {
@@ -148,21 +144,16 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
       }
 
       setComponents((current) => current.filter((component) => component.id !== id))
-      setToast({ kind: "success", message: "Component deleted." })
+      toast.success("Component deleted.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to delete component",
-      })
+      toast.error(error instanceof Error ? error.message : "Failed to delete component")
     } finally {
       setDeleting(null)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   const saveEdit = async (componentId: string) => {
     setSaving(true)
-    setToast(null)
 
     try {
       const response = await fetch(`/api/components/${componentId}`, {
@@ -188,20 +179,17 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
         )
       )
       setEditing(null)
-      setToast({ kind: "success", message: "Component updated." })
+      toast.success("Component updated.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to save",
-      })
+      toast.error(error instanceof Error ? error.message : "Failed to save")
     } finally {
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   const runPreview = async (componentId: string, code: string) => {
     setPreviewing(componentId)
+    const toastId = toast.loading("Running sandbox preview...")
 
     try {
       const response = await fetch("/api/components/preview", {
@@ -214,11 +202,16 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
         ...prev,
         [componentId]: { safe: data.safe ?? false, error: data.error },
       }))
+      toast[data.safe ? "success" : "error"](
+        data.safe ?? false ? "Sandbox preview passed." : data.error ?? "Sandbox preview failed.",
+        { id: toastId }
+      )
     } catch {
       setPreviewResults((prev) => ({
         ...prev,
         [componentId]: { safe: false, error: "Preview request failed" },
       }))
+      toast.error("Preview request failed", { id: toastId })
     } finally {
       setPreviewing(null)
     }
@@ -227,12 +220,12 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
   const trimmedLength = description.trim().length
 
   return (
-    <div className="relative space-y-8">
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <label htmlFor="component-description" className="text-sm font-semibold text-slate-900">
+    <div className="space-y-8">
+      <section className="rw-card p-5">
+        <label htmlFor="component-description" className="text-sm font-semibold text-[var(--text-primary)]">
           Describe your component
         </label>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
           Explain the layout, content, and visual treatment you want. Claude will generate a presentational React component.
         </p>
         <textarea
@@ -242,16 +235,16 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
           minLength={10}
           maxLength={500}
           rows={6}
-          className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+          className="rw-textarea mt-4"
           placeholder="Build a testimonial section with three quote cards, customer headshots, and a centered heading."
         />
         <div className="mt-2 flex items-center justify-between gap-4">
-          <p className="text-xs text-slate-500">{description.length}/500 characters</p>
+          <p className="text-xs text-[var(--text-secondary)]">{description.length}/500 characters</p>
           <button
             type="button"
             onClick={() => void generateComponent()}
             disabled={generating || trimmedLength < 10 || trimmedLength > 500}
-            className="inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rw-btn rw-btn-primary"
           >
             {generating ? "Generating..." : "Generate Component"}
           </button>
@@ -260,33 +253,33 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
 
       <section className="space-y-4">
         {components.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+          <div className="rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--bg-elevated)] p-6 text-sm text-[var(--text-secondary)]">
             Your component library is empty. Generate your first component to get started.
           </div>
         ) : (
           components.map((component) => (
             <article
               key={component.id}
-              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="rw-card p-5"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-lg font-semibold text-slate-900">{component.name}</h2>
+                    <h2 className="text-lg font-semibold text-[var(--text-primary)]">{component.name}</h2>
                     <span
                       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
                         component.approved
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-rose-50 text-rose-700"
+                          ? "bg-[var(--success-bg)] text-[var(--success)]"
+                          : "bg-[var(--error-bg)] text-[var(--error)]"
                       }`}
                     >
                       {component.approved ? "Approved" : "Rejected"}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-slate-500">
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">
                     {component.description ?? "No description provided."}
                   </p>
-                  <p className="mt-2 text-xs text-slate-400">
+                  <p className="mt-2 text-xs text-[var(--text-muted)]">
                     Generated {formatCreatedAt(component.createdAt)}
                   </p>
                 </div>
@@ -295,13 +288,13 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
                   type="button"
                   onClick={() => void deleteComponent(component.id)}
                   disabled={deleting === component.id}
-                  className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rw-btn rw-btn-secondary"
                 >
                   {deleting === component.id ? "Deleting..." : "Delete"}
                 </button>
               </div>
 
-              <div className="mt-4 overflow-hidden rounded-md border border-slate-200 text-sm">
+              <div className="mt-4 overflow-hidden rounded-md border border-[var(--border-default)] bg-[var(--bg-overlay)] text-sm">
                 <CodeMirror
                   value={editing === component.id ? editCode : component.code}
                   extensions={[javascript({ jsx: true, typescript: true })]}
@@ -319,7 +312,7 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
                       type="button"
                       onClick={() => void saveEdit(component.id)}
                       disabled={saving}
-                      className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rw-btn rw-btn-secondary"
                     >
                       {saving ? "Saving..." : "Save Changes"}
                     </button>
@@ -327,7 +320,7 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
                       type="button"
                       onClick={() => setEditing(null)}
                       disabled={saving}
-                      className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rw-btn rw-btn-secondary"
                     >
                       Cancel
                     </button>
@@ -340,7 +333,7 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
                         setEditing(component.id)
                         setEditCode(component.code)
                       }}
-                      className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rw-btn rw-btn-secondary"
                     >
                       Edit
                     </button>
@@ -348,7 +341,7 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
                       type="button"
                       onClick={() => void runPreview(component.id, component.code)}
                       disabled={previewing === component.id}
-                      className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rw-btn rw-btn-secondary"
                     >
                       {previewing === component.id ? "Running..." : "Preview in Sandbox"}
                     </button>
@@ -360,8 +353,8 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
                 <div
                   className={`mt-2 rounded-md border px-3 py-2 text-xs ${
                     previewResults[component.id].safe
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-rose-200 bg-rose-50 text-rose-700"
+                      ? "border-[color:rgba(34,197,94,0.3)] bg-[var(--success-bg)] text-[var(--success)]"
+                      : "border-[color:rgba(239,68,68,0.3)] bg-[var(--error-bg)] text-[var(--error)]"
                   }`}
                 >
                   {previewResults[component.id].safe
@@ -371,24 +364,12 @@ export default function ComponentGenerator({ initialComponents }: ComponentGener
               ) : null}
 
               {!component.approved && component.failReason ? (
-                <p className="mt-3 text-xs text-rose-600">{component.failReason}</p>
+                <p className="mt-3 text-xs text-[var(--error)]">{component.failReason}</p>
               ) : null}
             </article>
           ))
         )}
       </section>
-
-      {toast ? (
-        <div
-          className={`fixed bottom-6 right-6 rounded-md px-3 py-2 text-xs font-medium shadow-sm ${
-            toast.kind === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   )
 }

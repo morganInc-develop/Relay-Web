@@ -52,9 +52,9 @@ export default function DesignTokensClient({
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
       <div className="flex-1 space-y-10">
-        <section>
-          <h2 className="text-xl font-bold text-slate-900">Colors</h2>
-          <p className="mt-2 text-sm text-slate-500">
+        <section className="rw-card p-6">
+          <h2 className="text-xl font-bold text-[var(--text-primary)]">Colors</h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
             Update your brand colors and gradients. Saving triggers a site rebuild.
           </p>
           <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -71,9 +71,9 @@ export default function DesignTokensClient({
           </div>
         </section>
 
-        <section>
-          <h2 className="text-xl font-bold text-slate-900">Typography</h2>
-          <p className="mt-2 text-sm text-slate-500">
+        <section className="rw-card p-6">
+          <h2 className="text-xl font-bold text-[var(--text-primary)]">Typography</h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
             Choose a pre-paired font combination. Saving triggers a site rebuild.
           </p>
           <div className="mt-6">

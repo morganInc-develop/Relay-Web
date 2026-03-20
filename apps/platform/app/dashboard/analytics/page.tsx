@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation"
 
 import AnalyticsDashboard from "@/components/analytics/AnalyticsDashboard"
+import PageHeader from "@/components/dashboard/PageHeader"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
@@ -16,13 +18,12 @@ export default async function AnalyticsPage() {
   if (subscription?.status !== "ACTIVE") redirect("/onboarding")
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="mb-2 text-2xl font-bold">Analytics</h1>
-      <p className="mb-8 text-sm text-gray-500">
-        Review performance metrics for your site without leaving your dashboard.
-      </p>
-
+    <AnimatedPage className="rw-page-shell space-y-8">
+      <PageHeader
+        title="Analytics"
+        description="Review traffic, top pages, acquisition, and device mix in a single summary view."
+      />
       <AnalyticsDashboard />
-    </main>
+    </AnimatedPage>
   )
 }

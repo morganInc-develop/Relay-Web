@@ -1,6 +1,8 @@
 import { SubscriptionStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 
+import PageHeader from "@/components/dashboard/PageHeader";
+import AnimatedPage from "@/components/ui/AnimatedPage";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -49,7 +51,7 @@ function getStatusBadge(status: SubscriptionStatus) {
 
   return {
     label: "Inactive",
-    className: "bg-slate-100 text-slate-700",
+    className: "bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
   };
 }
 
@@ -76,22 +78,23 @@ export default async function BillingPage() {
   const renewalDate = formatDate(subscription.currentPeriodEnd);
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-900">Billing &amp; Subscription</h1>
-      </header>
+    <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
+      <PageHeader
+        title="Billing & Subscription"
+        description="Review your active plan, billing status, renewal timing, and payment controls."
+      />
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rw-card p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-sm text-slate-500">Current plan</p>
+            <p className="text-sm text-[var(--text-muted)]">Current plan</p>
             <div className="mt-2 flex items-center gap-3">
-              <h2 className="text-2xl font-semibold text-slate-900">{tierName}</h2>
-              <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+              <h2 className="text-2xl font-semibold text-[var(--text-primary)]">{tierName}</h2>
+              <span className="rw-badge">
                 {tierName}
               </span>
             </div>
-            <p className="mt-2 text-lg text-slate-700">{tierPrice}/month</p>
+            <p className="mt-2 text-lg text-[var(--text-secondary)]">{tierPrice}/month</p>
           </div>
           <span
             className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${statusBadge.className}`}
@@ -100,18 +103,18 @@ export default async function BillingPage() {
           </span>
         </div>
 
-        <div className="mt-6 border-t border-slate-200 pt-4">
-          <p className="text-sm text-slate-600">Billing period: Renews on {renewalDate}</p>
+        <div className="mt-6 border-t border-[var(--border-subtle)] pt-4">
+          <p className="text-sm text-[var(--text-secondary)]">Billing period: Renews on {renewalDate}</p>
         </div>
 
         {cancelAtPeriodEnd ? (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="mt-4 rounded-lg border border-[color:rgba(245,158,11,0.28)] bg-[var(--warning-bg)] px-4 py-3 text-sm text-[var(--warning)]">
             Your plan will cancel on {renewalDate}. Reactivate anytime to keep access.
           </div>
         ) : null}
 
         {isPastDue ? (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mt-4 rounded-lg border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] px-4 py-3 text-sm text-[var(--error)]">
             Your last payment failed. Update your payment method to keep access.
           </div>
         ) : null}
@@ -120,6 +123,6 @@ export default async function BillingPage() {
           <ManageBillingButton />
         </div>
       </section>
-    </div>
+    </AnimatedPage>
   );
 }

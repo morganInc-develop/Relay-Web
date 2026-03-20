@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { RiCheckboxCircleLine } from "react-icons/ri"
 
 type LinkStatus =
   | { status: "loading" }
@@ -67,7 +68,7 @@ export default function SiteLinking() {
   if (linkStatus.status === "loading") {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-500)]" />
       </div>
     )
   }
@@ -85,8 +86,8 @@ export default function SiteLinking() {
           ? "You must verify your domain before linking your site."
           : "Domain verification is required before linking."
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
-        <p className="text-sm text-yellow-800">{message}</p>
+      <div className="rounded-lg border border-[color:rgba(245,158,11,0.25)] bg-[var(--warning-bg)] px-4 py-3">
+        <p className="text-sm text-[var(--warning)]">{message}</p>
       </div>
     )
   }
@@ -95,11 +96,11 @@ export default function SiteLinking() {
   if (linkStatus.status === "linked") {
     return (
       <div className="space-y-3">
-        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
-          <span className="text-green-600 text-xl leading-none">✓</span>
+        <div className="flex items-center gap-3 rounded-lg border border-[color:rgba(34,197,94,0.25)] bg-[var(--success-bg)] px-4 py-3">
+          <RiCheckboxCircleLine className="h-5 w-5 text-[var(--success)]" />
           <div>
-            <p className="text-sm font-semibold text-green-800">Site linked</p>
-            <p className="text-xs text-green-600">
+            <p className="text-sm font-semibold text-[var(--success)]">Site linked</p>
+            <p className="text-xs text-[var(--success)]">
               Linked on{" "}
               {new Date(linkStatus.linkedAt).toLocaleDateString("en-US", {
                 month: "long",
@@ -109,23 +110,23 @@ export default function SiteLinking() {
             </p>
           </div>
         </div>
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2 text-sm">
+        <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 text-sm">
           <p>
-            <span className="text-gray-500">Domain:</span>{" "}
-            <span className="font-medium">{linkStatus.domain}</span>
+            <span className="text-[var(--text-secondary)]">Domain:</span>{" "}
+            <span className="font-medium text-[var(--text-primary)]">{linkStatus.domain}</span>
           </p>
           <p>
-            <span className="text-gray-500">Repo:</span>{" "}
-            <span className="font-medium break-all">{linkStatus.repoUrl}</span>
+            <span className="text-[var(--text-secondary)]">Repo:</span>{" "}
+            <span className="font-medium break-all text-[var(--text-primary)]">{linkStatus.repoUrl}</span>
           </p>
           <p>
-            <span className="text-gray-500">Payload URL:</span>{" "}
-            <span className="font-medium break-all">{linkStatus.payloadUrl}</span>
+            <span className="text-[var(--text-secondary)]">Payload URL:</span>{" "}
+            <span className="font-medium break-all text-[var(--text-primary)]">{linkStatus.payloadUrl}</span>
           </p>
           {linkStatus.vercelProjectId && (
             <p>
-              <span className="text-gray-500">Vercel Project:</span>{" "}
-              <span className="font-medium">{linkStatus.vercelProjectId}</span>
+              <span className="text-[var(--text-secondary)]">Vercel Project:</span>{" "}
+              <span className="font-medium text-[var(--text-primary)]">{linkStatus.vercelProjectId}</span>
             </p>
           )}
         </div>
@@ -136,14 +137,14 @@ export default function SiteLinking() {
   // ── Verified, not yet linked ───────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-600">
-        Domain <span className="font-medium text-gray-900">{linkStatus.domain}</span> is verified.
+      <p className="text-sm text-[var(--text-secondary)]">
+        Domain <span className="font-medium text-[var(--text-primary)]">{linkStatus.domain}</span> is verified.
         Now link your site infrastructure.
       </p>
 
       <div className="space-y-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-sm font-medium text-[var(--text-secondary)]">
             GitHub Repo URL <span className="text-red-500">*</span>
           </label>
           <input
@@ -151,12 +152,12 @@ export default function SiteLinking() {
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             placeholder="https://github.com/your-org/your-repo"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="rw-input"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-sm font-medium text-[var(--text-secondary)]">
             Payload CMS URL <span className="text-red-500">*</span>
           </label>
           <input
@@ -164,12 +165,12 @@ export default function SiteLinking() {
             value={payloadUrl}
             onChange={(e) => setPayloadUrl(e.target.value)}
             placeholder="https://cms.yourdomain.com"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="rw-input"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-sm font-medium text-[var(--text-secondary)]">
             Client Database URL <span className="text-red-500">*</span>
           </label>
           <input
@@ -177,22 +178,22 @@ export default function SiteLinking() {
             value={clientDbUrl}
             onChange={(e) => setClientDbUrl(e.target.value)}
             placeholder="postgresql://..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="rw-input font-mono"
           />
-          <p className="text-xs text-gray-400 mt-1">Stored encrypted. Never shown again.</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Stored encrypted. Never shown again.</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-sm font-medium text-[var(--text-secondary)]">
             Vercel Project ID{" "}
-            <span className="text-gray-400 font-normal">(optional)</span>
+            <span className="font-normal text-[var(--text-muted)]">(optional)</span>
           </label>
           <input
             type="text"
             value={vercelProjectId}
             onChange={(e) => setVercelProjectId(e.target.value)}
             placeholder="prj_..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="rw-input font-mono"
           />
         </div>
       </div>
@@ -200,13 +201,13 @@ export default function SiteLinking() {
       <button
         onClick={handleSubmit}
         disabled={isSubmitting || !repoUrl.trim() || !payloadUrl.trim() || !clientDbUrl.trim()}
-        className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 disabled:opacity-50 transition-colors"
+        className="rw-btn rw-btn-primary"
       >
         {isSubmitting ? "Linking..." : "Link Site"}
       </button>
 
       {submitError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-[color:rgba(239,68,68,0.25)] bg-[var(--error-bg)] px-4 py-3 text-sm text-[var(--error)]">
           {submitError}
         </div>
       )}

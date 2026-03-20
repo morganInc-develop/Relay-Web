@@ -32,14 +32,14 @@ export default async function DashboardLayout({ children }: Props) {
   return (
     <RateLimitProvider>
       <FetchInterceptor />
-      <div className="min-h-screen bg-slate-50">
+      <div className="rw-app-shell min-h-screen">
         <Sidebar
           tier={subscription.tier}
           userName={session.user.name ?? "RelayWeb User"}
           userEmail={session.user.email ?? ""}
           userImage={session.user.image ?? null}
         />
-        <main className="ml-0 min-h-screen p-6 md:ml-[240px] md:p-8">{children}</main>
+        <main className="min-h-screen px-4 py-6 md:ml-[240px] md:px-10 md:py-8">{children}</main>
       </div>
       <RateLimitToast />
     </RateLimitProvider>

@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation"
+import { RiLockLine } from "react-icons/ri"
 
 import { auth } from "@/lib/auth"
 import CanvasPageSelector from "@/components/dashboard/CanvasPageSelector"
 import ComponentGenerator from "@/components/dashboard/ComponentGenerator"
+import PageHeader from "@/components/dashboard/PageHeader"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import type { CanvasItem } from "@/lib/canvas-registry"
 import { hasTier3Access } from "@/lib/design-tier"
 import { prisma } from "@/lib/prisma"
@@ -27,14 +30,15 @@ export default async function ComponentsPage() {
 
   if (!hasTier3Access(subscription?.stripePriceId)) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="mb-2 text-2xl font-bold text-slate-900">Component Builder Locked</h1>
-          <p className="text-sm text-slate-600">
+      <AnimatedPage className="rw-page-shell rw-page-shell--compact">
+        <div className="rw-card border-dashed p-8 text-center">
+          <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+          <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Component Builder Locked</h1>
+          <p className="text-sm text-[var(--text-secondary)]">
             Upgrade to Tier 3 (Pro) to unlock the AI component builder
           </p>
         </div>
-      </main>
+      </AnimatedPage>
     )
   }
 
@@ -87,15 +91,17 @@ export default async function ComponentsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="mb-2 text-2xl font-bold text-slate-900">Component Builder</h1>
-      <p className="mb-8 text-sm text-slate-500">
-        Describe a component in plain English. Claude generates the code, Acorn checks it for safety, and approved components are saved to your library.
-      </p>
-      <ComponentGenerator initialComponents={initialComponents} />
-      <section className="mt-12">
-        <h2 className="mb-2 text-xl font-bold text-slate-900">Page Canvas</h2>
-        <p className="mb-6 text-sm text-slate-500">
+    <AnimatedPage className="rw-page-shell space-y-8">
+      <PageHeader
+        title="Component Builder"
+        description="Generate components with AI, review them for safety, then assemble page layouts on a draggable canvas."
+      />
+      <section className="rw-card p-6">
+        <ComponentGenerator initialComponents={initialComponents} />
+      </section>
+      <section className="rw-card p-6">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Page Canvas</h2>
+        <p className="mb-6 mt-2 text-sm text-[var(--text-secondary)]">
           Drag blocks onto the canvas to build your page layout. Changes are saved per page.
         </p>
         <CanvasPageSelector
@@ -104,6 +110,6 @@ export default async function ComponentsPage() {
           initialPages={pages}
         />
       </section>
-    </main>
+    </AnimatedPage>
   )
 }

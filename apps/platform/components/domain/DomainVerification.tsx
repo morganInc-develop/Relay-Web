@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { RiCheckboxCircleLine } from "react-icons/ri"
 
 type VerificationStatus =
   | { status: "none" }
@@ -128,7 +129,7 @@ export default function DomainVerification() {
   if (state.status === "loading") {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-500)]" />
       </div>
     )
   }
@@ -136,11 +137,11 @@ export default function DomainVerification() {
   // ── Verified ───────────────────────────────────────────────────────────────
   if (state.status === "verified") {
     return (
-      <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3">
-        <span className="text-green-600 text-xl leading-none">✓</span>
+      <div className="flex items-center gap-3 rounded-lg border border-[color:rgba(34,197,94,0.25)] bg-[var(--success-bg)] px-4 py-3">
+        <RiCheckboxCircleLine className="h-5 w-5 text-[var(--success)]" />
         <div>
-          <p className="text-sm font-semibold text-green-800">{state.domain}</p>
-          <p className="text-xs text-green-600">
+          <p className="text-sm font-semibold text-[var(--success)]">{state.domain}</p>
+          <p className="text-xs text-[var(--success)]">
             Verified on{" "}
             {new Date(state.verifiedAt).toLocaleDateString("en-US", {
               month: "long",
@@ -159,7 +160,7 @@ export default function DomainVerification() {
     return (
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="mb-1 block text-sm font-medium text-[var(--text-secondary)]">
             Your domain <span className="text-red-500">*</span>
           </label>
           <input
@@ -168,14 +169,14 @@ export default function DomainVerification() {
             onChange={(e) => setDomain(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && generateToken()}
             placeholder="yourdomain.com"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="rw-input"
           />
-          <p className="text-xs text-gray-400 mt-1">Enter without https:// or www</p>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">Enter without https:// or www</p>
         </div>
         <button
           onClick={generateToken}
           disabled={isActing || !domain.trim()}
-          className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          className="rw-btn rw-btn-primary"
         >
           {isActing ? "Generating..." : "Generate Token"}
         </button>
@@ -189,39 +190,39 @@ export default function DomainVerification() {
     const metaTag = `<meta name="relay-verify" content="${state.token}" />`
     return (
       <div className="space-y-4">
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-gray-600">
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm text-[var(--text-secondary)]">
               Domain:{" "}
-              <span className="font-medium text-gray-900">{state.domain}</span>
+              <span className="font-medium text-[var(--text-primary)]">{state.domain}</span>
             </p>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-[var(--text-muted)]">
               Expires {new Date(state.expiresAt).toLocaleString()}
             </p>
           </div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
+          <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">
             Add this to your site&apos;s{" "}
-            <code className="bg-gray-200 px-1 rounded text-xs">&lt;head&gt;</code>:
+            <code className="rounded bg-[var(--bg-overlay)] px-1 text-xs">&lt;head&gt;</code>:
           </p>
           <div className="flex items-start gap-2">
-            <code className="flex-1 text-xs bg-white border border-gray-200 rounded px-3 py-2 break-all font-mono text-gray-700 leading-relaxed">
+            <code className="flex-1 break-all rounded border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-secondary)]">
               {metaTag}
             </code>
             <button
               onClick={() => handleCopy(metaTag)}
-              className="flex-shrink-0 px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+              className="rw-btn rw-btn-secondary shrink-0 whitespace-nowrap px-3 py-2 text-xs"
             >
               {copied ? "Copied!" : "Copy"}
             </button>
           </div>
         </div>
 
-        <ol className="text-sm text-gray-600 space-y-1 list-decimal list-inside">
+        <ol className="list-inside list-decimal space-y-1 text-sm text-[var(--text-secondary)]">
           <li>Copy the meta tag above</li>
           <li>
             Paste it inside the{" "}
-            <code className="bg-gray-100 px-1 rounded text-xs">&lt;head&gt;</code> of your site&apos;s{" "}
-            <code className="bg-gray-100 px-1 rounded text-xs">app/layout.tsx</code>
+            <code className="rounded bg-[var(--bg-overlay)] px-1 text-xs">&lt;head&gt;</code> of your site&apos;s{" "}
+            <code className="rounded bg-[var(--bg-overlay)] px-1 text-xs">app/layout.tsx</code>
           </li>
           <li>Redeploy your site on Vercel</li>
           <li>Click Verify Now below</li>
@@ -231,20 +232,20 @@ export default function DomainVerification() {
           <button
             onClick={verify}
             disabled={isActing}
-            className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 disabled:opacity-50 transition-colors"
+            className="rw-btn rw-btn-primary"
           >
             {isActing ? "Checking..." : "Verify Now"}
           </button>
           <button
             onClick={resetToNone}
-            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            className="text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
           >
             Use a different domain
           </button>
         </div>
 
         {actionError && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+          <div className="rounded-lg border border-[color:rgba(239,68,68,0.25)] bg-[var(--error-bg)] px-4 py-3 text-sm text-[var(--error)]">
             {actionError}
           </div>
         )}

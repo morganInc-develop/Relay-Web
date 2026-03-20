@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { X, Clock, Zap } from "lucide-react"
+import { RiAlarmWarningLine, RiCloseLine, RiTimer2Line } from "react-icons/ri"
 import { useRateLimit } from "@/context/RateLimitContext"
 
 function formatTimeRemaining(resetAt: Date): string {
@@ -67,9 +67,9 @@ function SingleToast({
     <div
       className={`
         flex items-start gap-3 w-full max-w-sm
-        bg-gray-900 text-white
-        rounded-xl shadow-2xl border border-gray-700
+        rounded-xl border border-[var(--border-default)] bg-[var(--bg-overlay)] text-[var(--text-primary)]
         px-4 py-3.5
+        shadow-[var(--shadow-lg)]
         transition-all duration-300 ease-out
         ${isLeaving ? "opacity-0 translate-x-4" : "opacity-100 translate-x-0"}
       `}
@@ -78,8 +78,8 @@ function SingleToast({
     >
       {/* Icon */}
       <div className="shrink-0 mt-0.5">
-        <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center">
-          <Zap className="w-4 h-4 text-amber-400" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--warning-bg)]">
+          <RiAlarmWarningLine className="h-4 w-4 text-[var(--warning)]" />
         </div>
       </div>
 
@@ -90,17 +90,17 @@ function SingleToast({
         </p>
         {!isExpired ? (
           <div className="flex items-center gap-1.5 mt-1">
-            <Clock className="w-3 h-3 text-gray-400 shrink-0" />
-            <p className="text-xs text-gray-400">
+            <RiTimer2Line className="h-3 w-3 shrink-0 text-[var(--text-muted)]" />
+            <p className="text-xs text-[var(--text-secondary)]">
               Resets in{" "}
-              <span className="text-amber-400 font-medium tabular-nums">
+              <span className="font-medium tabular-nums text-[var(--warning)]">
                 {timeRemaining}
               </span>
             </p>
           </div>
         ) : (
-          <p className="text-xs text-green-400 mt-1 font-medium">
-            ✓ You can try again now
+          <p className="mt-1 text-xs font-medium text-[var(--success)]">
+            You can try again now
           </p>
         )}
       </div>
@@ -108,10 +108,10 @@ function SingleToast({
       {/* Dismiss button */}
       <button
         onClick={handleDismiss}
-        className="shrink-0 text-gray-500 hover:text-gray-300 transition-colors mt-0.5"
+        className="mt-0.5 shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
         aria-label="Dismiss notification"
       >
-        <X className="w-4 h-4" />
+        <RiCloseLine className="h-4 w-4" />
       </button>
     </div>
   )

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 
 interface SitemapManagerProps {
   initialEntries: Array<{
@@ -64,7 +65,6 @@ export default function SitemapManager({
     buildEntries(availablePages, initialEntries)
   )
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   const updateEntry = (pageSlug: string, nextEntry: Partial<SitemapEntryState>) => {
     setEntries((current) =>
@@ -76,7 +76,6 @@ export default function SitemapManager({
 
   const saveSettings = async () => {
     setSaving(true)
-    setToast(null)
 
     try {
       const response = await fetch("/api/site/sitemap", {
@@ -97,33 +96,30 @@ export default function SitemapManager({
         throw new Error(data.error ?? "Failed to save sitemap settings")
       }
 
-      setToast({ kind: "success", message: "Sitemap settings saved." })
+      toast.success("Sitemap settings saved.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message:
-          error instanceof Error ? error.message : "Failed to save sitemap settings",
-      })
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save sitemap settings"
+      )
     } finally {
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   return (
-    <div className="relative rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rw-card p-5">
       <div className="space-y-4">
         {entries.map((entry) => (
           <div
             key={entry.pageSlug}
-            className="grid gap-3 rounded-lg border border-slate-200 p-4 lg:grid-cols-[minmax(0,1.4fr)_auto_auto_auto]"
+            className="grid gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 lg:grid-cols-[minmax(0,1.4fr)_auto_auto_auto]"
           >
             <div className="min-w-0">
-              <p className="text-sm font-medium text-slate-900">{entry.title}</p>
-              <p className="text-xs text-slate-500">{entry.pageSlug}</p>
+              <p className="text-sm font-medium text-[var(--text-primary)]">{entry.title}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{entry.pageSlug}</p>
             </div>
 
-            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            <label className="inline-flex items-center gap-2 text-sm text-[var(--text-secondary)]">
               <input
                 type="checkbox"
                 checked={entry.include}
@@ -135,14 +131,14 @@ export default function SitemapManager({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-700">Priority</span>
+              <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Priority</span>
               <select
                 value={entry.priority.toFixed(1)}
                 disabled={!entry.include}
                 onChange={(event) =>
                   updateEntry(entry.pageSlug, { priority: Number(event.target.value) })
                 }
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                className="rw-select disabled:cursor-not-allowed disabled:opacity-55"
               >
                 {PRIORITY_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -153,14 +149,14 @@ export default function SitemapManager({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-slate-700">Changefreq</span>
+              <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Changefreq</span>
               <select
                 value={entry.changefreq}
                 disabled={!entry.include}
                 onChange={(event) =>
                   updateEntry(entry.pageSlug, { changefreq: event.target.value })
                 }
-                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                className="rw-select disabled:cursor-not-allowed disabled:opacity-55"
               >
                 {CHANGEFREQ_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -178,23 +174,11 @@ export default function SitemapManager({
           type="button"
           onClick={() => void saveSettings()}
           disabled={saving}
-          className="inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rw-btn rw-btn-primary"
         >
           {saving ? "Saving..." : "Save Sitemap Settings"}
         </button>
       </div>
-
-      {toast ? (
-        <div
-          className={`fixed bottom-6 right-6 rounded-md px-3 py-2 text-xs font-medium shadow-sm ${
-            toast.kind === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   )
 }

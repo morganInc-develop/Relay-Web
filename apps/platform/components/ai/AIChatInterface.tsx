@@ -1,6 +1,14 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import {
+  RiAlertLine,
+  RiCheckboxCircleLine,
+  RiMailLine,
+  RiRobot2Line,
+  RiSendPlaneLine,
+  RiShieldCheckLine,
+} from "react-icons/ri"
 
 type ProposedAction = {
   action: "update-text" | "update-seo"
@@ -225,23 +233,26 @@ export default function AIChatInterface() {
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-800">AI Assistant</p>
-        <p className="text-xs text-gray-500">{usageSummary}</p>
+        <div className="flex items-center gap-2">
+          <RiRobot2Line className="h-4 w-4 text-[var(--accent-500)]" />
+          <p className="text-sm font-medium text-[var(--text-primary)]">AI Assistant</p>
+        </div>
+        <p className="text-xs text-[var(--text-secondary)]">{usageSummary}</p>
       </div>
 
-      <div className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <div className="rw-scrollbar max-h-72 space-y-2 overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
         {thread.length === 0 ? (
-          <p className="text-xs text-gray-500">Ask for a content or SEO change to start.</p>
+          <p className="text-xs text-[var(--text-secondary)]">Ask for a content or SEO change to start.</p>
         ) : (
           thread.map((entry) => (
             <div
               key={entry.id}
               className={`max-w-[90%] rounded-md px-3 py-2 text-xs ${
                 entry.role === "user"
-                  ? "ml-auto bg-gray-900 text-white"
-                  : "mr-auto border border-gray-200 bg-white text-gray-800"
+                  ? "ml-auto bg-[var(--accent-500)] text-white"
+                  : "mr-auto border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-primary)]"
               }`}
             >
               {entry.content}
@@ -264,38 +275,42 @@ export default function AIChatInterface() {
           maxLength={1000}
           placeholder="Describe the change in plain English..."
           disabled={loading || confirming || rejecting || Boolean(pendingProposal)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          className="rw-textarea min-h-[120px]"
         />
 
         <div className="flex items-center justify-between">
-          <p className="text-xs text-gray-500">{characterCount}/1000</p>
+          <p className="text-xs text-[var(--text-secondary)]">{characterCount}/1000</p>
           <button
             type="button"
             onClick={() => void sendMessage()}
             disabled={!message.trim() || loading || confirming || rejecting || Boolean(pendingProposal)}
-            className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            className="rw-btn rw-btn-primary"
           >
+            {!loading ? <RiSendPlaneLine className="h-4 w-4" /> : null}
             {loading ? "Thinking..." : "Send"}
           </button>
         </div>
       </div>
 
       {pendingProposal && (
-        <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm font-semibold text-blue-900">Confirm this proposal</p>
-          <p className="text-xs text-blue-800">
+        <div className="space-y-3 rounded-xl border border-[color:rgba(96,165,250,0.24)] bg-[color:rgba(59,130,246,0.12)] p-4">
+          <div className="flex items-center gap-2">
+            <RiShieldCheckLine className="h-4 w-4 text-[var(--accent-500)]" />
+            <p className="text-sm font-semibold text-[var(--text-primary)]">Confirm this proposal</p>
+          </div>
+          <p className="text-xs text-[var(--text-secondary)]">
             <strong>Action:</strong> {pendingProposal.proposal.action}
           </p>
-          <p className="text-xs text-blue-800">
+          <p className="text-xs text-[var(--text-secondary)]">
             <strong>Page:</strong> {pendingProposal.proposal.page}
           </p>
-          <p className="text-xs text-blue-800">
+          <p className="text-xs text-[var(--text-secondary)]">
             <strong>Field:</strong> {pendingProposal.proposal.field}
           </p>
-          <p className="text-xs text-blue-800">
+          <p className="text-xs text-[var(--text-secondary)]">
             <strong>Value:</strong> {pendingProposal.proposal.value}
           </p>
-          <p className="text-xs text-blue-800">
+          <p className="text-xs text-[var(--text-secondary)]">
             <strong>Reasoning:</strong> {pendingProposal.proposal.reasoning}
           </p>
           <div className="flex items-center gap-2">
@@ -303,15 +318,16 @@ export default function AIChatInterface() {
               type="button"
               onClick={() => void confirmProposal()}
               disabled={confirming || rejecting}
-              className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+              className="rw-btn rw-btn-primary px-3 py-1.5 text-xs"
             >
+              {!confirming ? <RiCheckboxCircleLine className="h-4 w-4" /> : null}
               {confirming ? "Confirming..." : "Confirm"}
             </button>
             <button
               type="button"
               onClick={() => void rejectProposal()}
               disabled={confirming || rejecting}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700"
+              className="rw-btn rw-btn-secondary px-3 py-1.5 text-xs"
             >
               {rejecting ? "Rejecting..." : "Reject"}
             </button>
@@ -320,27 +336,31 @@ export default function AIChatInterface() {
       )}
 
       {feedback?.type === "success" && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+        <div className="flex items-center gap-2 rounded-lg border border-[color:rgba(34,197,94,0.28)] bg-[var(--success-bg)] p-3 text-sm text-[var(--success)]">
+          <RiCheckboxCircleLine className="h-4 w-4" />
           {feedback.message}
         </div>
       )}
 
       {feedback?.type === "error" && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] p-3 text-sm text-[var(--error)]">
+          <RiAlertLine className="h-4 w-4" />
           {feedback.message}
         </div>
       )}
 
       {feedback?.type === "blocked" && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] p-3 text-sm text-[var(--error)]">
+          <RiAlertLine className="h-4 w-4" />
           Message not allowed. Please rephrase your request.
         </div>
       )}
 
       {feedback?.type === "out-of-scope" && (
-        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <div className="space-y-2 rounded-lg border border-[color:rgba(245,158,11,0.28)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning)]">
           <p>{feedback.message}</p>
-          <a href="mailto:hello@morgandev.studio" className="text-xs font-medium underline">
+          <a href="mailto:hello@morgandev.studio" className="inline-flex items-center gap-1 text-xs font-medium underline">
+            <RiMailLine className="h-4 w-4" />
             hello@morgandev.studio
           </a>
         </div>

@@ -3,7 +3,12 @@
 import { useState } from "react"
 import Image from "next/image"
 import { generateReactHelpers } from "@uploadthing/react"
-import { Upload, X, CheckCircle, AlertCircle } from "lucide-react"
+import {
+  RiCheckboxCircleLine,
+  RiCloseLine,
+  RiErrorWarningLine,
+  RiUploadCloud2Line,
+} from "react-icons/ri"
 import type { OurFileRouter } from "@/lib/uploadthing"
 
 interface ImageUploaderProps {
@@ -82,13 +87,13 @@ export default function ImageUploader({
 
   return (
     <div className="w-full">
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+      <label className="mb-2 block text-sm font-medium text-[var(--text-secondary)]">{label}</label>
 
       {status === "idle" && (
-        <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors">
-          <Upload className="w-8 h-8 text-gray-400 mb-2" />
-          <span className="text-sm text-gray-500">Click to upload or drag and drop</span>
-          <span className="text-xs text-gray-400 mt-1">PNG, JPG, WebP, GIF up to 4MB</span>
+        <label className="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--border-default)] bg-[var(--bg-elevated)] transition-colors hover:border-[var(--border-accent)] hover:bg-[var(--bg-overlay)]">
+          <RiUploadCloud2Line className="mb-2 h-8 w-8 text-[var(--text-muted)]" />
+          <span className="text-sm text-[var(--text-secondary)]">Click to upload or drag and drop</span>
+          <span className="mt-1 text-xs text-[var(--text-muted)]">PNG, JPG, WebP, GIF up to 4MB</span>
           <input
             type="file"
             className="hidden"
@@ -99,7 +104,7 @@ export default function ImageUploader({
       )}
 
       {status === "uploading" && (
-        <div className="flex items-center gap-3 p-4 border border-gray-200 rounded-xl bg-gray-50">
+        <div className="rw-card flex items-center gap-3 bg-[var(--bg-elevated)] p-4">
           {preview && (
             <Image
               src={preview}
@@ -111,19 +116,19 @@ export default function ImageUploader({
             />
           )}
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-900 rounded-full animate-spin" />
-              <span className="text-sm text-gray-700">Uploading...</span>
+            <div className="mb-1 flex items-center gap-2">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-500)]" />
+              <span className="text-sm text-[var(--text-secondary)]">Uploading...</span>
             </div>
-            <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-              <div className="h-full bg-gray-900 rounded-full animate-pulse w-2/3" />
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-overlay)]">
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--accent-500)]" />
             </div>
           </div>
         </div>
       )}
 
       {status === "success" && (
-        <div className="flex items-center gap-3 p-4 border border-green-200 rounded-xl bg-green-50">
+        <div className="flex items-center gap-3 rounded-xl border border-[color:rgba(34,197,94,0.25)] bg-[var(--success-bg)] p-4">
           {preview && (
             <Image
               src={preview}
@@ -136,24 +141,24 @@ export default function ImageUploader({
           )}
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              <span className="text-sm text-green-700 font-medium">Upload complete</span>
+              <RiCheckboxCircleLine className="h-4 w-4 text-[var(--success)]" />
+              <span className="text-sm font-medium text-[var(--success)]">Upload complete</span>
             </div>
           </div>
-          <button onClick={handleReset} className="text-gray-400 hover:text-gray-600">
-            <X className="w-4 h-4" />
+          <button onClick={handleReset} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <RiCloseLine className="h-4 w-4" />
           </button>
         </div>
       )}
 
       {status === "error" && (
-        <div className="flex items-center gap-3 p-4 border border-red-200 rounded-xl bg-red-50">
-          <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+        <div className="flex items-center gap-3 rounded-xl border border-[color:rgba(239,68,68,0.25)] bg-[var(--error-bg)] p-4">
+          <RiErrorWarningLine className="h-5 w-5 shrink-0 text-[var(--error)]" />
           <div className="flex-1">
-            <span className="text-sm text-red-700">{errorMessage ?? "Upload failed"}</span>
+            <span className="text-sm text-[var(--error)]">{errorMessage ?? "Upload failed"}</span>
           </div>
-          <button onClick={handleReset} className="text-gray-400 hover:text-gray-600">
-            <X className="w-4 h-4" />
+          <button onClick={handleReset} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <RiCloseLine className="h-4 w-4" />
           </button>
         </div>
       )}

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import DomainVerification from "@/components/domain/DomainVerification"
 import OnboardingCheckout from "@/components/onboarding/OnboardingCheckout"
 import SiteLinking from "@/components/site/SiteLinking"
+import StandaloneShell from "@/components/ui/StandaloneShell"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
@@ -78,41 +79,44 @@ export default async function OnboardingPage({
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-10 md:px-8">
-      <div className="mx-auto max-w-5xl space-y-8">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Finish your onboarding</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Complete these steps once to unlock your dashboard.
+    <StandaloneShell centered={false} maxWidth="4xl" panel={false}>
+      <main className="space-y-8">
+        <header className="rw-card-elevated p-8">
+          <span className="rw-eyebrow">Relay Web</span>
+          <h1 className="mt-5 text-3xl font-semibold text-[var(--text-primary)]">
+            Finish your onboarding
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-[var(--text-secondary)]">
+            Move through subscription, verification, and site linking once. After that, the full dashboard is available.
           </p>
-        </div>
+        </header>
 
         {!hasActiveSubscription ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="rw-card-elevated p-6">
             <OnboardingCheckout plans={plans} sessionId={params.session_id} />
           </div>
         ) : !hasVerifiedDomain ? (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Step 2: Verify your domain</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Add your verification meta tag, redeploy, then verify.
+          <section className="rw-card-elevated p-6">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Step 2: Verify your domain</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              Add your verification meta tag, redeploy, then run the verification check.
             </p>
             <div className="mt-5">
               <DomainVerification />
             </div>
           </section>
         ) : (
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Step 3: Link your site</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Connect your repo, Payload instance, and client database.
+          <section className="rw-card-elevated p-6">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Step 3: Link your site</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              Connect your repo, Payload instance, and client database to enable live editing.
             </p>
             <div className="mt-5">
               <SiteLinking />
             </div>
           </section>
         )}
-      </div>
-    </main>
+      </main>
+    </StandaloneShell>
   )
 }

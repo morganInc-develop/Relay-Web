@@ -1,13 +1,23 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 
-import SessionProvider from "@/components/providers/SessionProvider";
+import AppProviders from "@/components/providers/AppProviders";
 
 import "./globals.css";
 
 const inter = Inter({
-  variable: "--font-inter",
+  variable: "--font-sans",
+  subsets: ["latin"],
+});
+
+const interTight = Inter_Tight({
+  variable: "--font-display",
+  subsets: ["latin"],
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
 });
 
@@ -22,12 +32,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} antialiased`}>
-        <SessionProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${inter.variable} ${interTight.variable} ${jetBrainsMono.variable} antialiased`}
+      >
+        <AppProviders>
           {children}
-          <Analytics />
-        </SessionProvider>
+        </AppProviders>
+        <Analytics />
       </body>
     </html>
   );

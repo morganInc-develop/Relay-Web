@@ -7,13 +7,13 @@ type Props = Record<string, string>
 function buttonVariantClass(variant: string): string {
   switch (variant) {
     case "secondary":
-      return "bg-slate-100 text-slate-900 hover:bg-slate-200"
+      return "rw-btn rw-btn-secondary"
     case "outline":
-      return "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+      return "rw-btn rw-btn-secondary"
     case "ghost":
-      return "bg-transparent text-slate-900 hover:bg-slate-100"
+      return "rw-btn rw-btn-ghost"
     default:
-      return "bg-slate-900 text-white hover:bg-slate-700"
+      return "rw-btn rw-btn-primary"
   }
 }
 
@@ -35,18 +35,16 @@ export function renderCanvasComponent(type: string, props: Props): ReactNode {
     case "Button":
       return (
         <button
-          className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-medium transition ${buttonVariantClass(
-            props.variant ?? "primary"
-          )}`}
+          className={buttonVariantClass(props.variant ?? "primary")}
         >
           {props.label ?? "Button"}
         </button>
       )
     case "Card":
       return (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h3 className="font-semibold text-slate-900">{props.title ?? "Card Title"}</h3>
-          <p className="mt-1 text-sm text-slate-600">{props.content ?? "Card body text."}</p>
+        <div className="rw-card p-4">
+          <h3 className="font-semibold text-[var(--text-primary)]">{props.title ?? "Card Title"}</h3>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">{props.content ?? "Card body text."}</p>
         </div>
       )
     case "Badge":
@@ -63,10 +61,10 @@ export function renderCanvasComponent(type: string, props: Props): ReactNode {
       const sizeClass =
         props.size === "h1" ? "text-3xl" : props.size === "h3" ? "text-xl" : "text-2xl"
 
-      return <Tag className={`font-bold text-slate-900 ${sizeClass}`}>{props.text ?? "Heading"}</Tag>
+      return <Tag className={`font-bold text-[var(--text-primary)] ${sizeClass}`}>{props.text ?? "Heading"}</Tag>
     }
     case "Paragraph":
-      return <p className="text-sm leading-6 text-slate-700">{props.text ?? "Paragraph text."}</p>
+      return <p className="text-sm leading-6 text-[var(--text-secondary)]">{props.text ?? "Paragraph text."}</p>
     case "Alert":
       return (
         <div className={`rounded-lg border p-3 text-sm ${alertVariantClass(props.variant ?? "info")}`}>
@@ -75,7 +73,7 @@ export function renderCanvasComponent(type: string, props: Props): ReactNode {
       )
     default:
       return (
-        <div className="rounded border border-dashed border-slate-300 p-3 text-xs text-slate-400">
+        <div className="rounded border border-dashed border-[var(--border-default)] p-3 text-xs text-[var(--text-muted)]">
           {type}
         </div>
       )

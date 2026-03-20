@@ -1,7 +1,10 @@
 import SeoAudit from "@/components/seo/SeoAudit"
 import StructuredDataSection from "@/components/seo/StructuredDataSection"
 import { redirect } from "next/navigation"
+import { RiLockLine } from "react-icons/ri"
 
+import PageHeader from "@/components/dashboard/PageHeader"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import { auth } from "@/lib/auth"
 import { hasTier3Access } from "@/lib/design-tier"
 import { prisma } from "@/lib/prisma"
@@ -17,27 +20,28 @@ export default async function SeoPage() {
   if (subscription?.status !== "ACTIVE") redirect("/onboarding")
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="mb-2 text-2xl font-bold">SEO Audit</h1>
-      <p className="mb-8 text-sm text-gray-500">
-        Run an AI-powered audit on any page. Get scored results and one-click auto-fix.
-      </p>
+    <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
+      <PageHeader
+        title="SEO Audit"
+        description="Run AI-powered audits, review recommendations, and apply structured metadata without leaving the dashboard."
+      />
       <SeoAudit tier={subscription?.tier ?? "TIER1"} />
 
       {hasTier3Access(subscription?.stripePriceId) ? (
         <StructuredDataSection />
       ) : (
-        <section className="mt-12">
-          <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-            <h2 className="mb-2 text-2xl font-bold text-slate-900">
+        <section>
+          <div className="rw-card border-dashed p-8 text-center">
+            <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+            <h2 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">
               Structured Data Locked
             </h2>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-[var(--text-secondary)]">
               Upgrade to Tier 3 (Pro) to unlock structured data controls.
             </p>
           </div>
         </section>
       )}
-    </main>
+    </AnimatedPage>
   )
 }

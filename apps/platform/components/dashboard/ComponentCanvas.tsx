@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react"
 import { DndProvider, useDrag, useDrop } from "react-dnd"
 import { HTML5Backend } from "react-dnd-html5-backend"
+import { RiArrowDownLine, RiArrowUpLine, RiCloseLine } from "react-icons/ri"
+import { toast } from "sonner"
 
 import PropsPanel from "@/components/dashboard/PropsPanel"
 import { renderCanvasComponent } from "@/components/dashboard/CanvasRenderer"
@@ -59,11 +61,11 @@ function SidebarItem({ def }: SidebarItemProps) {
       ref={(node) => {
         dragRef(node)
       }}
-      className="cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition hover:border-slate-300"
+      className="cursor-grab rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 shadow-[var(--shadow-sm)] transition hover:border-[var(--border-default)]"
       style={{ opacity: isDragging ? 0.45 : 1 }}
     >
-      <p className="text-sm font-medium text-slate-900">{def.displayName}</p>
-      <p className="mt-1 text-xs text-slate-500">Drag onto the canvas</p>
+      <p className="text-sm font-medium text-[var(--text-primary)]">{def.displayName}</p>
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">Drag onto the canvas</p>
     </div>
   )
 }
@@ -80,8 +82,10 @@ function PlacedCanvasItem({
 }: PlacedCanvasItemProps) {
   return (
     <div
-      className={`relative cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition ${
-        isSelected ? "border-slate-900 ring-2 ring-slate-900" : "border-slate-200 hover:border-slate-300"
+      className={`relative cursor-pointer rounded-xl border p-4 shadow-[var(--shadow-sm)] transition ${
+        isSelected
+          ? "border-[var(--border-accent)] bg-[var(--bg-elevated)] ring-2 ring-[var(--border-accent)]"
+          : "border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-default)]"
       }`}
       onClick={() => onSelect(item.id)}
     >
@@ -93,9 +97,9 @@ function PlacedCanvasItem({
             onMove(index, "up")
           }}
           disabled={isFirst}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] transition hover:bg-[var(--bg-overlay)] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          ↑
+          <RiArrowUpLine size={15} />
         </button>
         <button
           type="button"
@@ -104,9 +108,9 @@ function PlacedCanvasItem({
             onMove(index, "down")
           }}
           disabled={isLast}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] transition hover:bg-[var(--bg-overlay)] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          ↓
+          <RiArrowDownLine size={15} />
         </button>
         <button
           type="button"
@@ -114,13 +118,13 @@ function PlacedCanvasItem({
             event.stopPropagation()
             onRemove(item.id)
           }}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+          className="flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] transition hover:bg-[var(--bg-overlay)]"
         >
-          ✕
+          <RiCloseLine size={15} />
         </button>
       </div>
 
-      <p className="mb-3 pr-24 text-xs font-medium uppercase tracking-wide text-slate-400">
+      <p className="mb-3 pr-24 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
         {item.componentType}
       </p>
       {renderCanvasComponent(item.componentType, item.props)}
@@ -166,14 +170,16 @@ function CanvasDropZone({
         dropRef(node)
       }}
       className={`min-h-[420px] rounded-xl border-2 border-dashed p-4 transition ${
-        isOver ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-slate-50/60"
+        isOver
+          ? "border-[var(--border-accent)] bg-[var(--bg-elevated)]"
+          : "border-[var(--border-default)] bg-[color:rgba(255,255,255,0.02)]"
       }`}
     >
       {layout.length === 0 ? (
-        <div className="flex h-full min-h-[380px] items-center justify-center rounded-lg bg-white/70 text-center">
+        <div className="flex h-full min-h-[380px] items-center justify-center rounded-lg bg-[var(--bg-surface)]/80 text-center">
           <div>
-            <p className="text-sm font-medium text-slate-900">Drop components here</p>
-            <p className="mt-1 text-xs text-slate-500">Start with a heading, card, or alert block.</p>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Drop components here</p>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">Start with a heading, card, or alert block.</p>
           </div>
         </div>
       ) : (
@@ -201,7 +207,6 @@ export default function ComponentCanvas({ pageSlug, initialLayout }: ComponentCa
   const [layout, setLayout] = useState<CanvasItem[]>(initialLayout)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   const selectedItem = useMemo(
     () => layout.find((component) => component.id === selectedId) ?? null,
@@ -233,7 +238,6 @@ export default function ComponentCanvas({ pageSlug, initialLayout }: ComponentCa
 
   const saveCanvas = async () => {
     setSaving(true)
-    setToast(null)
 
     try {
       const response = await fetch("/api/components/canvas", {
@@ -246,25 +250,21 @@ export default function ComponentCanvas({ pageSlug, initialLayout }: ComponentCa
         throw new Error(data.error ?? "Failed to save")
       }
 
-      setToast({ kind: "success", message: "Canvas saved." })
+      toast.success("Canvas saved.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to save",
-      })
+      toast.error(error instanceof Error ? error.message : "Failed to save")
     } finally {
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="relative flex flex-col gap-6 lg:flex-row">
-        <aside className="w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-4 lg:w-52">
-          <h3 className="text-sm font-semibold text-slate-900">Blocks</h3>
-          <p className="mt-1 text-xs text-slate-500">Drag these onto the page canvas.</p>
-          <div className="mt-4 space-y-3 lg:max-h-[640px] lg:overflow-y-auto">
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <aside className="rw-card w-full shrink-0 bg-[var(--bg-elevated)] p-4 lg:w-52">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Blocks</h3>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">Drag these onto the page canvas.</p>
+          <div className="rw-scrollbar mt-4 space-y-3 lg:max-h-[640px] lg:overflow-y-auto">
             {CANVAS_COMPONENTS.map((def) => (
               <SidebarItem key={def.type} def={def} />
             ))}
@@ -274,8 +274,8 @@ export default function ComponentCanvas({ pageSlug, initialLayout }: ComponentCa
         <div className="flex-1 space-y-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">Home Canvas</h3>
-              <p className="text-sm text-slate-500">
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Home Canvas</h3>
+              <p className="text-sm text-[var(--text-secondary)]">
                 Add blocks, reorder them, then save the layout for this page.
               </p>
             </div>
@@ -283,7 +283,7 @@ export default function ComponentCanvas({ pageSlug, initialLayout }: ComponentCa
               type="button"
               onClick={() => void saveCanvas()}
               disabled={saving}
-              className="inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rw-btn rw-btn-primary"
             >
               {saving ? "Saving..." : "Save Canvas"}
             </button>
@@ -315,26 +315,12 @@ export default function ComponentCanvas({ pageSlug, initialLayout }: ComponentCa
                 onClose={() => setSelectedId(null)}
               />
             ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+              <div className="rounded-xl border border-dashed border-[var(--border-default)] bg-[var(--bg-elevated)] p-4 text-sm text-[var(--text-secondary)]">
                 Select a block on the canvas to edit its props.
               </div>
             )}
           </div>
         </div>
-
-        {toast ? (
-          <div
-            className={`fixed bottom-6 right-6 rounded-md px-3 py-2 text-xs font-medium shadow-sm ${
-              toast.kind === "success"
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-rose-50 text-rose-700"
-            }`}
-            role="status"
-            aria-live="polite"
-          >
-            {toast.message}
-          </div>
-        ) : null}
       </div>
     </DndProvider>
   )

@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
-  serverExternalPackages: ["@e2b/code-interpreter"],
+  transpilePackages: ["framer-motion"],
+  serverExternalPackages: ["@e2b/code-interpreter", "gsap", "lenis"],
   images: {
     remotePatterns: [
       {

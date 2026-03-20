@@ -3,6 +3,9 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { RiAlertLine } from "react-icons/ri";
+
+import StandaloneShell from "@/components/ui/StandaloneShell";
 
 const errorMessages: Record<string, string> = {
   OAuthAccountNotLinked:
@@ -22,94 +25,60 @@ function ErrorDetails() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error") ?? "";
   const message = errorMessages[error] ?? "An error occurred during sign in. Please try again.";
-  const [currentUrl] = useState(() =>
-    typeof window !== "undefined" ? window.location.href : ""
+  const [origin] = useState(() =>
+    typeof window !== "undefined" ? window.location.origin : ""
   );
 
   useEffect(() => {
-    console.error("[auth:error] page rendered");
-    console.error("[auth:error] error code:", error || "none");
-    console.error("[auth:error] full URL:", window.location.href);
-    console.error("[auth:error] search params:", window.location.search);
+    void error;
   }, [error]);
 
   return (
-    <>
-      {/* DEBUG PANEL — open by default so it's immediately visible */}
-      <details className="mb-4 rounded-xl border-2 border-red-400 bg-red-50 p-4 text-xs" open>
-        <summary className="cursor-pointer font-bold text-red-800">
-          🐛 DEBUG — Auth Error Details
-        </summary>
-        <table className="mt-3 w-full border-collapse font-mono">
-          <tbody>
-            <tr className="border-t border-red-200">
-              <td className="py-1 pr-4 text-slate-600">Error code</td>
-              <td className="py-1 font-bold text-red-700">{error || "(none)"}</td>
-            </tr>
-            <tr className="border-t border-red-200">
-              <td className="py-1 pr-4 text-slate-600">Error message</td>
-              <td className="py-1 text-slate-800">{message}</td>
-            </tr>
-            <tr className="border-t border-red-200">
-              <td className="py-1 pr-4 text-slate-600">Full URL</td>
-              <td className="break-all py-1 text-slate-800">{currentUrl}</td>
-            </tr>
-          </tbody>
-        </table>
+    <div className="mt-6 space-y-4 text-left">
+      <div className="rounded-xl border border-[color:rgba(239,68,68,0.28)] bg-[var(--error-bg)] px-4 py-3 text-sm text-[var(--error)]">
+        {message}
+      </div>
 
-        <p className="mt-3 text-red-700">
-          <strong>What this means:</strong>
-        </p>
-        <ul className="mt-1 list-inside list-disc space-y-1 text-slate-700">
-          {error === "Configuration" && (
-            <>
-              <li>AUTH_SECRET may be missing or invalid in Vercel env vars</li>
-              <li>GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET may be missing</li>
-              <li>Database connection (Prisma) may be failing</li>
-              <li>AUTH_URL / NEXTAUTH_URL may be set to localhost</li>
-            </>
-          )}
-          {error === "OAuthCallback" && (
-            <>
-              <li>The Google OAuth callback URL is not authorized in Google Cloud Console</li>
-              <li>Expected redirect URI: {currentUrl.split("/api/auth")[0]}/api/auth/callback/google</li>
-            </>
-          )}
-          {error === "OAuthCreateAccount" && (
-            <li>Prisma failed to create the user in the database — check DATABASE_URL</li>
-          )}
-          {!error && <li>No error code in URL — check server logs for more info</li>}
-        </ul>
-      </details>
+      {error ? (
+        <div className="rw-card p-4">
+          <p className="rw-kicker">Error Code</p>
+          <p className="mt-2 font-medium text-[var(--text-primary)]">{error}</p>
+        </div>
+      ) : null}
 
-      <p className="mt-3 text-sm text-slate-600">{message}</p>
-    </>
+      {error === "OAuthCallback" && origin ? (
+        <div className="rw-card p-4 text-sm text-[var(--text-secondary)]">
+          Confirm this redirect URI exists in Google Cloud:
+          <div className="mt-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-2 font-mono text-xs text-[var(--text-primary)]">
+            {origin}/api/auth/callback/google
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 export default function AuthErrorPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div className="text-center">
-          <p className="text-2xl font-bold tracking-tight text-slate-900">
-            RelayWeb
-          </p>
-          <h1 className="mt-6 text-2xl font-semibold text-slate-900">
-            Sign-in Error
-          </h1>
-          <Suspense fallback={<p className="mt-3 text-sm text-slate-600">Loading...</p>}>
-            <ErrorDetails />
-          </Suspense>
+    <StandaloneShell maxWidth="md">
+      <div className="text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[color:rgba(239,68,68,0.22)] bg-[var(--error-bg)]">
+          <RiAlertLine className="h-8 w-8 text-[var(--error)]" />
         </div>
-
+        <span className="rw-eyebrow mt-6 justify-center">Relay Web</span>
+        <h1 className="mt-5 text-3xl font-semibold text-[var(--text-primary)]">
+          Sign-in error
+        </h1>
+        <Suspense fallback={<p className="mt-4 text-sm text-[var(--text-secondary)]">Loading error details...</p>}>
+          <ErrorDetails />
+        </Suspense>
         <Link
           href="/auth/signin"
-          className="mt-8 inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
+          className="rw-btn rw-btn-primary mt-8 w-full justify-center"
         >
           Try again
         </Link>
       </div>
-    </div>
+    </StandaloneShell>
   );
 }

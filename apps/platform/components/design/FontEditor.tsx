@@ -29,6 +29,7 @@ import "@fontsource/source-serif-4/400.css"
 import "@fontsource/source-serif-4/700.css"
 
 import { useState } from "react"
+import { toast } from "sonner"
 
 import { FONT_PAIRS } from "@/lib/font-pairs"
 
@@ -53,11 +54,9 @@ function getHeadingPreviewWeight(headingPackage: string): 400 | 700 {
 export default function FontEditor({ initialPairId, onLivePreview }: FontEditorProps) {
   const [selectedId, setSelectedId] = useState(initialPairId)
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   const applyFontPair = async () => {
     setSaving(true)
-    setToast(null)
 
     try {
       const response = await fetch("/api/design/update-font", {
@@ -76,20 +75,16 @@ export default function FontEditor({ initialPairId, onLivePreview }: FontEditorP
         throw new Error(data.error ?? "Failed to save font pair")
       }
 
-      setToast({ kind: "success", message: "Font pair updated and rebuild triggered." })
+      toast.success("Font pair updated and rebuild triggered.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to save font pair",
-      })
+      toast.error(error instanceof Error ? error.message : "Failed to save font pair")
     } finally {
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   return (
-    <article className="relative rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="rw-card p-5">
       <div className="space-y-3">
         {FONT_PAIRS.map((pair) => {
           const isSelected = selectedId === pair.id
@@ -99,8 +94,8 @@ export default function FontEditor({ initialPairId, onLivePreview }: FontEditorP
               key={pair.id}
               className={`block cursor-pointer rounded-xl border p-4 transition ${
                 isSelected
-                  ? "border-slate-900 bg-slate-50 shadow-sm"
-                  : "border-slate-200 bg-white hover:border-slate-300"
+                  ? "border-[var(--border-accent)] bg-[var(--bg-elevated)] shadow-[var(--shadow-sm)]"
+                  : "border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-default)]"
               }`}
             >
               <div className="flex items-start gap-3">
@@ -113,13 +108,13 @@ export default function FontEditor({ initialPairId, onLivePreview }: FontEditorP
                     setSelectedId(pair.id)
                     onLivePreview?.("font-pair", pair.id)
                   }}
-                  className="mt-1 h-4 w-4 border-slate-300 text-slate-900 focus:ring-slate-900"
+                  className="mt-1 h-4 w-4 border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--accent-500)] focus:ring-[var(--accent-500)]"
                 />
 
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-900">{pair.displayName}</p>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">{pair.displayName}</p>
                   <p
-                    className="mt-3 text-[20px] leading-tight text-slate-900"
+                    className="mt-3 text-[20px] leading-tight text-[var(--text-primary)]"
                     style={{
                       fontFamily: pair.headingFamily,
                       fontWeight: getHeadingPreviewWeight(pair.headingPackage),
@@ -128,7 +123,7 @@ export default function FontEditor({ initialPairId, onLivePreview }: FontEditorP
                     Designing for confident first impressions
                   </p>
                   <p
-                    className="mt-2 text-sm leading-6 text-slate-600"
+                    className="mt-2 text-sm leading-6 text-[var(--text-secondary)]"
                     style={{ fontFamily: pair.bodyFamily, fontWeight: 400 }}
                   >
                     The quick brown fox jumps over the lazy dog
@@ -144,22 +139,10 @@ export default function FontEditor({ initialPairId, onLivePreview }: FontEditorP
         type="button"
         onClick={() => void applyFontPair()}
         disabled={saving}
-        className="mt-5 inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className="rw-btn rw-btn-primary mt-5"
       >
         {saving ? "Saving..." : "Apply Font Pair"}
       </button>
-
-      {toast ? (
-        <div
-          className={`absolute right-4 top-4 rounded-md px-3 py-2 text-xs font-medium shadow-sm ${
-            toast.kind === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </article>
   )
 }

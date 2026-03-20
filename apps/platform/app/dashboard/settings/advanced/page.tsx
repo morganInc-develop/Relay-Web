@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation"
+import { RiLockLine } from "react-icons/ri"
 
+import PageHeader from "@/components/dashboard/PageHeader"
 import ScriptManager from "@/components/site/ScriptManager"
 import SitemapManager from "@/components/site/SitemapManager"
 import WhitelabelSettings from "@/components/site/WhitelabelSettings"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import { auth } from "@/lib/auth"
 import { hasTier3Access } from "@/lib/design-tier"
 import { prisma } from "@/lib/prisma"
@@ -27,14 +30,15 @@ export default async function AdvancedSettingsPage() {
 
   if (!hasTier3Access(subscription?.stripePriceId)) {
     return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="mb-2 text-2xl font-bold text-slate-900">Advanced Settings Locked</h1>
-          <p className="text-sm text-slate-600">
+      <AnimatedPage className="rw-page-shell rw-page-shell--compact">
+        <div className="rw-card border-dashed p-8 text-center">
+          <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+          <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Advanced Settings Locked</h1>
+          <p className="text-sm text-[var(--text-secondary)]">
             Upgrade to Tier 3 (Pro) to unlock advanced settings
           </p>
         </div>
-      </main>
+      </AnimatedPage>
     )
   }
 
@@ -86,12 +90,15 @@ export default async function AdvancedSettingsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-2xl font-bold text-slate-900">Advanced Settings</h1>
+    <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
+      <PageHeader
+        title="Advanced Settings"
+        description="Control custom scripts, white-label access, and sitemap behavior for the connected site."
+      />
 
-      <section className="mt-8">
-        <h2 className="text-xl font-bold text-slate-900">Script Injection</h2>
-        <p className="mt-2 text-sm text-slate-500">
+      <section className="rw-card p-6">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Script Injection</h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
           Inject custom scripts into your site&apos;s &lt;head&gt; or &lt;body&gt;. Maximum 10
           scripts.
         </p>
@@ -100,17 +107,17 @@ export default async function AdvancedSettingsPage() {
         </div>
       </section>
 
-      <section className="mt-12">
-        <h2 className="text-xl font-bold text-slate-900">White-Label Dashboard URL</h2>
-        <p className="mt-2 text-sm text-slate-500">Host this dashboard under your own domain.</p>
+      <section className="rw-card p-6">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">White-Label Dashboard URL</h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">Host this dashboard under your own domain.</p>
         <div className="mt-6">
           <WhitelabelSettings initialUrl={site.whitelabelUrl} />
         </div>
       </section>
 
-      <section className="mt-12">
-        <h2 className="text-xl font-bold text-slate-900">Sitemap Management</h2>
-        <p className="mt-2 text-sm text-slate-500">
+      <section className="rw-card p-6">
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">Sitemap Management</h2>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
           Control which pages appear in your sitemap and tune their crawl hints.
         </p>
         <div className="mt-6">
@@ -125,6 +132,6 @@ export default async function AdvancedSettingsPage() {
           />
         </div>
       </section>
-    </main>
+    </AnimatedPage>
   )
 }

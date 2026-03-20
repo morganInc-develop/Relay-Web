@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { SubscriptionStatus, type SubscriptionTier } from "@prisma/client";
 import { redirect } from "next/navigation";
-import { Globe } from "lucide-react";
+import { RiGlobalLine } from "react-icons/ri";
 
+import PageHeader from "@/components/dashboard/PageHeader";
+import AnimatedPage from "@/components/ui/AnimatedPage";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -119,60 +121,63 @@ export default async function DashboardPage() {
   const name = session.user.name ?? session.user.email ?? "there";
 
   return (
-    <div className="space-y-8">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <AnimatedPage className="rw-page-shell space-y-8">
+      <PageHeader
+        title={`Welcome back, ${name}`}
+        description="Keep your website updated, optimized, and moving with a single control surface."
+      />
+
+      <section className="rw-card-elevated p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">
-              Welcome back, {name}
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Keep your website updated and performing at its best.
+            <p className="rw-kicker">Active Plan</p>
+            <p className="mt-2 text-lg font-semibold text-[var(--text-primary)]">
+              {planLabels[subscription.tier]}
             </p>
           </div>
-          <span className="inline-flex w-fit rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-            {planLabels[subscription.tier]}
+          <span className="rw-badge">
+            Relay Web workspace
           </span>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-600">Pages</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">{pageCount}</p>
+        <div className="rw-card p-5">
+          <p className="text-sm text-[var(--text-secondary)]">Pages</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">{pageCount}</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-600">Last updated</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
+        <div className="rw-card p-5">
+          <p className="text-sm text-[var(--text-secondary)]">Last updated</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">
             {formatDate(site?.updatedAt)}
           </p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-sm text-slate-600">AI requests remaining this month</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-900">
+        <div className="rw-card p-5">
+          <p className="text-sm text-[var(--text-secondary)]">AI requests remaining this month</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">
             {aiRequestsRemaining}
           </p>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Quick actions</h2>
+      <section className="rw-card p-6">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Quick actions</h2>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
             href="/dashboard/content"
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            className="rw-btn rw-btn-primary"
           >
             Edit Content
           </Link>
           <Link
             href="/dashboard/seo"
-            className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-200"
+            className="rw-btn rw-btn-secondary"
           >
             Run SEO Audit
           </Link>
           <Link
             href="/dashboard/analytics"
-            className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-200"
+            className="rw-btn rw-btn-secondary"
           >
             View Analytics
           </Link>
@@ -180,43 +185,43 @@ export default async function DashboardPage() {
       </section>
 
       {!site ? (
-        <div className="bg-gray-50 border border-gray-200 border-dashed rounded-xl p-8 text-center">
-          <Globe className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <h3 className="font-semibold text-gray-700 mb-1">Connect your site</h3>
-          <p className="text-sm text-gray-500 mb-4">
+        <div className="rw-card border-dashed p-8 text-center">
+          <RiGlobalLine className="mx-auto mb-3 h-10 w-10 text-[var(--text-muted)]" />
+          <h3 className="mb-1 font-semibold text-[var(--text-primary)]">Connect your site</h3>
+          <p className="mb-4 text-sm text-[var(--text-secondary)]">
             Verify your domain and link your site to start editing content.
           </p>
           <a
             href="/dashboard/site"
-            className="inline-block bg-gray-900 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-gray-700 transition-colors"
+            className="rw-btn rw-btn-primary"
           >
-            Connect site →
+            Connect site
           </a>
         </div>
       ) : (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="rw-card p-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Recent activity</h2>
-            <p className="text-sm text-slate-500">{site.name}</p>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Recent activity</h2>
+            <p className="text-sm text-[var(--text-secondary)]">{site.name}</p>
           </div>
 
           {recentActivity.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-600">
+            <p className="mt-4 text-sm text-[var(--text-secondary)]">
               No recent version snapshots yet.
             </p>
           ) : (
-            <ul className="mt-4 divide-y divide-slate-100">
+            <ul className="mt-4 divide-y divide-[var(--border-subtle)]">
               {recentActivity.map((activity) => (
                 <li
                   key={activity.id}
                   className="flex flex-col gap-1 py-3 text-sm md:flex-row md:items-center md:justify-between"
                 >
-                  <p className="text-slate-700">
-                    <span className="font-medium text-slate-900">{activity.page}</span>
+                  <p className="text-[var(--text-secondary)]">
+                    <span className="font-medium text-[var(--text-primary)]">{activity.page}</span>
                     {" • "}
                     <span>{activity.field}</span>
                   </p>
-                  <p className="text-slate-500">
+                  <p className="text-[var(--text-muted)]">
                     {activity.source} • {formatDate(activity.createdAt)}
                   </p>
                 </li>
@@ -225,6 +230,6 @@ export default async function DashboardPage() {
           )}
         </section>
       )}
-    </div>
+    </AnimatedPage>
   );
 }

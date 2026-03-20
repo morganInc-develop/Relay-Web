@@ -39,18 +39,18 @@ export default function SuccessClient({ userId, tierName }: Props) {
 
   if (timedOut) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-        <div className="w-full max-w-md rounded-2xl bg-white p-10 text-center shadow-lg">
-          <h1 className="mb-3 text-xl font-bold text-gray-900">
+      <div className="rw-standalone-shell flex min-h-screen items-center justify-center p-4">
+        <div className="rw-card-elevated w-full max-w-md p-10 text-center">
+          <h1 className="mb-3 text-xl font-bold text-[var(--text-primary)]">
             This is taking longer than expected
           </h1>
-          <p className="mb-6 text-gray-500">
+          <p className="mb-6 text-[var(--text-secondary)]">
             Your payment was received but your subscription is still activating.
             Please contact us and we&apos;ll get this resolved immediately.
           </p>
           <a
             href="mailto:hello@morgandev.studio"
-            className="inline-block rounded-lg bg-gray-900 px-6 py-3 font-semibold text-white transition-colors hover:bg-gray-700"
+            className="rw-btn rw-btn-primary"
           >
             Contact hello@morgandev.studio
           </a>
@@ -60,15 +60,15 @@ export default function SuccessClient({ userId, tierName }: Props) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-10 text-center shadow-lg">
+    <div className="rw-standalone-shell flex min-h-screen items-center justify-center p-4">
+      <div className="rw-card-elevated w-full max-w-md p-10 text-center">
         <div className="mb-6 flex justify-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-gray-900" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[var(--border-default)] border-t-[var(--accent-500)]" />
         </div>
-        <h1 className="mb-2 text-xl font-bold text-gray-900">
+        <h1 className="mb-2 text-xl font-bold text-[var(--text-primary)]">
           Activating your subscription...
         </h1>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-[var(--text-muted)]">
           Setting up your {tierName} plan. This usually takes a few seconds.
         </p>
       </div>

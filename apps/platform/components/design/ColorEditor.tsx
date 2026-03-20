@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import chroma from "chroma-js"
 import { HexColorPicker } from "react-colorful"
+import { toast } from "sonner"
 
 interface ColorEditorProps {
   tokenKey: string
@@ -50,7 +51,6 @@ export default function ColorEditor({
   const [startColor, setStartColor] = useState(initialGradient.start)
   const [stopColor, setStopColor] = useState(initialGradient.stop)
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   const gradientValue = useMemo(() => {
     try {
@@ -71,7 +71,6 @@ export default function ColorEditor({
 
   const saveToken = async () => {
     setSaving(true)
-    setToast(null)
 
     try {
       const value = type === "solid" ? solidColor : gradientValue
@@ -93,22 +92,18 @@ export default function ColorEditor({
         throw new Error(data.error ?? "Failed to save token")
       }
 
-      setToast({ kind: "success", message: "Token updated and rebuild triggered." })
+      toast.success("Token updated and rebuild triggered.")
     } catch (error) {
-      setToast({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Failed to save token",
-      })
+      toast.error(error instanceof Error ? error.message : "Failed to save token")
     } finally {
       setSaving(false)
-      setTimeout(() => setToast(null), 3000)
     }
   }
 
   return (
-    <article className="relative rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="text-sm font-semibold text-slate-900">{label}</h3>
-      <p className="mt-1 text-xs text-slate-500">{tokenKey}</p>
+    <article className="rw-card p-5">
+      <h3 className="text-sm font-semibold text-[var(--text-primary)]">{label}</h3>
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">{tokenKey}</p>
 
       {type === "solid" ? (
         <div className="mt-4 space-y-4">
@@ -121,27 +116,27 @@ export default function ColorEditor({
           />
           <div className="flex items-center gap-3">
             <div
-              className="h-10 w-10 rounded-md border border-slate-200"
+              className="h-10 w-10 rounded-md border border-[var(--border-default)]"
               style={{ backgroundColor: solidColor }}
               aria-label={`${label} preview`}
             />
-            <span className="font-mono text-xs text-slate-600">{solidColor}</span>
+            <span className="font-mono text-xs text-[var(--text-secondary)]">{solidColor}</span>
           </div>
         </div>
       ) : (
         <div className="mt-4 space-y-5">
           <div>
-            <p className="mb-2 text-xs font-medium text-slate-600">Start</p>
+            <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Start</p>
             <HexColorPicker color={startColor} onChange={setStartColor} />
-            <p className="mt-2 font-mono text-xs text-slate-600">{startColor}</p>
+            <p className="mt-2 font-mono text-xs text-[var(--text-secondary)]">{startColor}</p>
           </div>
           <div>
-            <p className="mb-2 text-xs font-medium text-slate-600">Stop</p>
+            <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">Stop</p>
             <HexColorPicker color={stopColor} onChange={setStopColor} />
-            <p className="mt-2 font-mono text-xs text-slate-600">{stopColor}</p>
+            <p className="mt-2 font-mono text-xs text-[var(--text-secondary)]">{stopColor}</p>
           </div>
           <div
-            className="h-10 rounded-md border border-slate-200"
+            className="h-10 rounded-md border border-[var(--border-default)]"
             style={{ backgroundImage: gradientValue }}
             aria-label={`${label} preview`}
           />
@@ -152,22 +147,10 @@ export default function ColorEditor({
         type="button"
         onClick={() => void saveToken()}
         disabled={saving}
-        className="mt-5 inline-flex items-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className="rw-btn rw-btn-primary mt-5"
       >
         {saving ? "Saving..." : "Save"}
       </button>
-
-      {toast ? (
-        <div
-          className={`absolute right-4 top-4 rounded-md px-3 py-2 text-xs font-medium shadow-sm ${
-            toast.kind === "success" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </article>
   )
 }

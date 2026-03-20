@@ -1,6 +1,6 @@
-import { CheckCircle } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { RiCheckboxCircleLine } from "react-icons/ri";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -43,24 +43,24 @@ export default async function SuccessPage({
 
   if (subscription?.status === "ACTIVE") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-        <div className="w-full max-w-md rounded-2xl bg-white p-10 text-center shadow-lg">
+      <div className="rw-standalone-shell flex min-h-screen items-center justify-center p-4">
+        <div className="rw-card-elevated w-full max-w-md p-10 text-center">
           <div className="mb-6 flex justify-center">
-            <CheckCircle className="h-16 w-16 text-green-500" />
+            <RiCheckboxCircleLine className="h-16 w-16 text-[var(--success)]" />
           </div>
-          <h1 className="mb-3 text-3xl font-bold text-gray-900">You&apos;re all set!</h1>
-          <p className="mb-2 text-lg text-gray-500">
-            Your <span className="font-semibold text-gray-800">{tierName}</span> plan is now
+          <h1 className="mb-3 text-3xl font-bold text-[var(--text-primary)]">You&apos;re all set!</h1>
+          <p className="mb-2 text-lg text-[var(--text-secondary)]">
+            Your <span className="font-semibold text-[var(--text-primary)]">{tierName}</span> plan is now
             active.
           </p>
-          <p className="mb-8 text-sm text-gray-400">
+          <p className="mb-8 text-sm text-[var(--text-muted)]">
             You now have full access to your RelayWeb dashboard.
           </p>
           <Link
             href="/dashboard"
-            className="inline-block rounded-lg bg-gray-900 px-8 py-3 font-semibold text-white transition-colors hover:bg-gray-700"
+            className="rw-btn rw-btn-primary"
           >
-            Go to dashboard →
+            Go to dashboard
           </Link>
         </div>
       </div>

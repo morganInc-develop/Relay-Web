@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation"
 
 import AIChatInterface from "@/components/ai/AIChatInterface"
+import PageHeader from "@/components/dashboard/PageHeader"
+import AnimatedPage from "@/components/ui/AnimatedPage"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
@@ -16,16 +18,14 @@ export default async function AIPage() {
   if (subscription?.status !== "ACTIVE") redirect("/onboarding")
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="mb-2 text-2xl font-bold">AI Assistant</h1>
-      <p className="mb-8 text-sm text-gray-500">
-        Ask for content and SEO edits in plain English, then confirm before applying.
-      </p>
-
-      <section className="mt-8">
-        <h2 className="mb-4 text-lg font-semibold">AI Assistant</h2>
+    <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
+      <PageHeader
+        title="AI Assistant"
+        description="Describe a content or SEO change in plain English, review the proposed update, and approve it before anything is applied."
+      />
+      <section className="rw-card p-6">
         <AIChatInterface />
       </section>
-    </main>
+    </AnimatedPage>
   )
 }

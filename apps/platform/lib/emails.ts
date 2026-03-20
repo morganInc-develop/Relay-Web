@@ -48,7 +48,7 @@ export async function sendDomainVerifiedEmail(
       to,
       subject: `Your domain ${domain} is verified — RelayWeb`,
       html: `
-        <h2>Domain verified ✓</h2>
+        <h2>Domain verified</h2>
         <p>Hi ${name ?? "there"},</p>
         <p>Your domain <strong>${domain}</strong> has been successfully verified and connected to your RelayWeb dashboard.</p>
         <p>You can now link your GitHub repo and Payload CMS instance to start editing your site content.</p>

@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+
+import AnimatedPage from "@/components/ui/AnimatedPage"
+import PageHeader from "@/components/dashboard/PageHeader"
 import ContentEditor from "./ContentEditor"
 
 export default async function ContentPage() {
@@ -23,15 +26,14 @@ export default async function ContentPage() {
   if (!site) redirect("/onboarding")
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-bold mb-2">Content Editor</h1>
-      <p className="text-gray-500 text-sm mb-8">
-        Select a page and edit your site content. Each field saves independently.
-      </p>
-
-      <section>
+    <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
+      <PageHeader
+        title="Content Editor"
+        description="Edit page copy and SEO fields, schedule changes, and restore prior versions without leaving the dashboard."
+      />
+      <section className="rw-card p-6">
         <ContentEditor siteId={site.id} />
       </section>
-    </main>
+    </AnimatedPage>
   )
 }

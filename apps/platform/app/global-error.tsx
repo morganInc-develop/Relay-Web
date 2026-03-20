@@ -3,6 +3,8 @@
 import * as Sentry from "@sentry/nextjs"
 import { useEffect } from "react"
 
+import StandaloneShell from "@/components/ui/StandaloneShell"
+
 export default function GlobalError({
   error,
   reset,
@@ -17,21 +19,22 @@ export default function GlobalError({
   return (
     <html>
       <body>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-lg p-10 max-w-md w-full text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-3">Something went wrong</h1>
-            <p className="text-gray-500 mb-6">
-              An unexpected error occurred. This has been reported automatically.
-              If this keeps happening, contact hello@morgandev.studio.
+        <StandaloneShell maxWidth="sm">
+          <div className="text-center">
+            <span className="rw-eyebrow justify-center">Relay Web</span>
+            <h1 className="mt-5 text-3xl font-semibold text-[var(--text-primary)]">Something went wrong</h1>
+            <p className="mt-3 text-sm text-[var(--text-secondary)]">
+              An unexpected error occurred and has been reported automatically. If it keeps happening,
+              contact hello@morgandev.studio.
             </p>
             <button
               onClick={reset}
-              className="bg-gray-900 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-700 transition-colors"
+              className="rw-btn rw-btn-primary mt-8"
             >
               Try again
             </button>
           </div>
-        </div>
+        </StandaloneShell>
       </body>
     </html>
   )

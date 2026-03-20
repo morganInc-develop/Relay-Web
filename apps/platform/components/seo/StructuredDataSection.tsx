@@ -102,9 +102,9 @@ export default function StructuredDataSection() {
   }, [pageSlug])
 
   return (
-    <section className="mt-12">
+    <section className="rw-card p-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label htmlFor="structured-data-page" className="text-sm font-medium text-slate-700">
+        <label htmlFor="structured-data-page" className="text-sm font-medium text-[var(--text-secondary)]">
           Page
         </label>
         <select
@@ -112,7 +112,7 @@ export default function StructuredDataSection() {
           value={pageSlug}
           disabled={loadingPages || loadingSchema}
           onChange={(event) => setPageSlug(event.target.value)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+          className="rw-select w-auto min-w-44"
         >
           {pages.map((page) => (
             <option key={page.slug} value={page.slug}>
@@ -120,7 +120,7 @@ export default function StructuredDataSection() {
             </option>
           ))}
         </select>
-        {loadingSchema ? <span className="text-xs text-slate-400">Loading...</span> : null}
+        {loadingSchema ? <span className="text-xs text-[var(--text-muted)]">Loading...</span> : null}
       </div>
 
       <StructuredDataEditor initialSchema={schema} pageSlug={pageSlug} />
