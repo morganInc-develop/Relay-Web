@@ -49,6 +49,12 @@ export const sitemapRateLimit = new Ratelimit({
   prefix: "relayweb:sitemap",
 })
 
+export const mediaUploadRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(30, "1 h"),
+  prefix: "relayweb:media-upload",
+})
+
 export const rateLimiters = {
   // Content update routes — 30 requests per hour per user
   contentUpdate: new Ratelimit({

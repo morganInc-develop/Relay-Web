@@ -10,6 +10,7 @@ import {
   RiDashboardLine,
   RiFileTextLine,
   RiGlobalLine,
+  RiImageLine,
   RiLayoutLine,
   RiLogoutCircleLine,
   RiPaletteLine,
@@ -97,6 +98,12 @@ export default function Sidebar({
       label: "Team",
       icon: RiTeamLine,
       href: "/dashboard/team",
+      show: true,
+    },
+    {
+      label: "Media",
+      icon: RiImageLine,
+      href: "/dashboard/media",
       show: true,
     },
     {

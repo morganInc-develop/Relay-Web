@@ -188,8 +188,24 @@ model Site {
   structuredData   StructuredData[]
   sitemapEntries   SitemapEntry[]
   aiUsage          AIUsage?
+  mediaAssets      MediaAsset[]
 
   @@map("sites")
+}
+
+model MediaAsset {
+  id        String   @id @default(cuid())
+  siteId    String
+  r2Key     String
+  filename  String
+  mimeType  String
+  size      Int
+  url       String
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@map("media_assets")
 }
 
 // ─── TEAM MEMBERS ─────────────────────────────────────────────────────────────

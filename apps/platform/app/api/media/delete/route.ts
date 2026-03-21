@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getSiteForUser, getUserSubscription } from "@/lib/site-access"
 import { deleteFromR2, buildR2Key } from "@/lib/r2"
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
+import { prisma } from "@/lib/prisma"
 import { SubscriptionStatus } from "@prisma/client"
 
 interface DeleteBody {
@@ -46,8 +47,16 @@ export async function DELETE(req: NextRequest) {
 
   // Delete from R2
   try {
-    const key = buildR2Key(siteId, folder, filename)
+    const mediaAsset = await prisma.mediaAsset.findFirst({
+      where: { siteId, filename },
+      select: { r2Key: true },
+    })
+
+    const key = mediaAsset?.r2Key ?? buildR2Key(siteId, folder, filename)
     await deleteFromR2(key)
+    await prisma.mediaAsset.deleteMany({
+      where: { siteId, r2Key: key },
+    })
     return NextResponse.json({ success: true })
   } catch {
     return NextResponse.json({ error: "Failed to delete file" }, { status: 500 })
