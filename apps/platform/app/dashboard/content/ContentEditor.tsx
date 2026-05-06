@@ -1,6 +1,7 @@
 "use client"
 
 import ScheduledPublish from "@/components/content/ScheduledPublish"
+import ScheduledChangesList from "@/components/content/ScheduledChangesList"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   RiCheckboxCircleLine,
@@ -8,9 +9,11 @@ import {
   RiRefreshLine,
   RiSaveLine,
 } from "react-icons/ri"
+import { toast } from "sonner"
 
 interface ContentEditorProps {
   siteId: string
+  mode?: "content" | "seo" | "all"
 }
 
 interface PageOption {
@@ -88,14 +91,14 @@ function isR2Key(value: string): boolean {
   return value.includes("/")
 }
 
-export default function ContentEditor({ siteId }: ContentEditorProps) {
+export default function ContentEditor({ siteId, mode = "all" }: ContentEditorProps) {
   const [pages, setPages] = useState<PageOption[]>([])
   const [selectedPage, setSelectedPage] = useState("")
   const [fields, setFields] = useState<Record<string, string>>({})
   const [serverFields, setServerFields] = useState<Record<string, string>>({})
   const [versions, setVersions] = useState<Record<string, FieldVersion[]>>({})
   const [versionsRemaining, setVersionsRemaining] = useState<Record<string, number>>({})
-  const [activeTab, setActiveTab] = useState<EditorTab>("text")
+  const [activeTab, setActiveTab] = useState<EditorTab>(mode === "seo" ? "seo" : "text")
   const [loading, setLoading] = useState(true)
   const [loadingPage, setLoadingPage] = useState(false)
   const [savingField, setSavingField] = useState<string | null>(null)
@@ -104,6 +107,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
   const [historyOpenField, setHistoryOpenField] = useState<string | null>(null)
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [imagePreviewUrls, setImagePreviewUrls] = useState<Record<string, string>>({})
+  const [scheduledRefreshKey, setScheduledRefreshKey] = useState(0)
   const signedUrlCacheRef = useRef<Record<string, string>>({})
 
   const textFields = useMemo(
@@ -187,6 +191,11 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
   }, [siteId])
 
   useEffect(() => {
+    if (mode === "seo") setActiveTab("seo")
+    if (mode === "content") setActiveTab("text")
+  }, [mode])
+
+  useEffect(() => {
     let cancelled = false
 
     const resolvePreviewUrls = async () => {
@@ -253,6 +262,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
 
     setSavingField(fieldKey)
     setFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }))
+    const toastId = toast.loading("Saving field...")
     try {
       const res = await fetch("/api/content/update-text", {
         method: "PATCH",
@@ -272,12 +282,15 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
       }
       markSaved(fieldKey)
       await loadPage(selectedPage)
+      toast.success("Field saved.", { id: toastId })
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Save failed"
       setFields((prev) => ({ ...prev, [fieldKey]: previousValue }))
       setFieldErrors((prev) => ({
         ...prev,
-        [fieldKey]: err instanceof Error ? err.message : "Save failed",
+        [fieldKey]: message,
       }))
+      toast.error(message, { id: toastId })
     } finally {
       setSavingField((current) => (current === fieldKey ? null : current))
     }
@@ -290,6 +303,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
 
     setSavingField(fieldKey)
     setFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }))
+    const toastId = toast.loading("Saving SEO field...")
     try {
       const res = await fetch("/api/content/update-seo", {
         method: "PATCH",
@@ -309,12 +323,15 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
       }
       markSaved(fieldKey)
       await loadPage(selectedPage)
+      toast.success("SEO field saved.", { id: toastId })
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Save failed"
       setFields((prev) => ({ ...prev, [fieldKey]: previousValue }))
       setFieldErrors((prev) => ({
         ...prev,
-        [fieldKey]: err instanceof Error ? err.message : "Save failed",
+        [fieldKey]: message,
       }))
+      toast.error(message, { id: toastId })
     } finally {
       setSavingField((current) => (current === fieldKey ? null : current))
     }
@@ -323,6 +340,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
   const revertVersion = async (fieldKey: string, versionId: string) => {
     setSavingField(fieldKey)
     setFieldErrors((prev) => ({ ...prev, [fieldKey]: "" }))
+    const toastId = toast.loading("Reverting version...")
     try {
       const res = await fetch("/api/content/revert", {
         method: "PATCH",
@@ -338,11 +356,14 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
       }
       markSaved(fieldKey)
       await loadPage(selectedPage)
+      toast.success("Version reverted.", { id: toastId })
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Revert failed"
       setFieldErrors((prev) => ({
         ...prev,
-        [fieldKey]: err instanceof Error ? err.message : "Revert failed",
+        [fieldKey]: message,
       }))
+      toast.error(message, { id: toastId })
     } finally {
       setSavingField((current) => (current === fieldKey ? null : current))
     }
@@ -385,6 +406,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
         </select>
       </div>
 
+      {mode === "all" ? (
       <div className="flex gap-2 border-b border-[var(--border-subtle)]">
         <button
           onClick={() => setActiveTab("text")}
@@ -407,6 +429,7 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
           SEO Fields
         </button>
       </div>
+      ) : null}
 
       {loadingPage ? (
         <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
@@ -486,7 +509,12 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                     )}
                   </div>
 
-                  <ScheduledPublish page={selectedPage} field={fieldKey} value={value} />
+                  <ScheduledPublish
+                    page={selectedPage}
+                    field={fieldKey}
+                    value={value}
+                    onScheduled={() => setScheduledRefreshKey((current) => current + 1)}
+                  />
 
                   {historyOpenField === fieldKey && (
                     <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
@@ -606,7 +634,12 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
                     )}
                   </div>
 
-                  <ScheduledPublish page={selectedPage} field={seoField.key} value={value} />
+                  <ScheduledPublish
+                    page={selectedPage}
+                    field={seoField.apiField}
+                    value={value}
+                    onScheduled={() => setScheduledRefreshKey((current) => current + 1)}
+                  />
 
                   {historyOpenField === seoField.key && (
                     <div className="space-y-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
@@ -646,6 +679,8 @@ export default function ContentEditor({ siteId }: ContentEditorProps) {
             })}
         </div>
       )}
+
+      <ScheduledChangesList page={selectedPage} refreshKey={scheduledRefreshKey} />
     </div>
   )
 }

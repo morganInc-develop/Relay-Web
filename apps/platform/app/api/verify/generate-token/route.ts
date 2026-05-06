@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import {
   generateVerifyToken,
-  buildVerifyMetaTag,
+  buildVerifyTxtRecord,
   normalizeDomain,
 } from "@/lib/domain-verification"
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
   }
 
   const token = generateVerifyToken()
-  const metaTag = buildVerifyMetaTag(token)
   const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000)
 
   const existing = await prisma.site.findFirst({
@@ -78,7 +77,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     token,
     domain: normalizedDomain,
-    metaTag,
+    txtRecord: buildVerifyTxtRecord(normalizedDomain, token),
     expiresAt: expiresAt.toISOString(),
   })
 }

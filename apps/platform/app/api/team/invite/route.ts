@@ -45,6 +45,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 })
   }
 
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      memberships: {
+        where: { siteId: site.id },
+        select: { id: true },
+      },
+    },
+  })
+
+  if (existingUser?.memberships.length) {
+    return NextResponse.json(
+      { error: "That email already belongs to this site." },
+      { status: 409 }
+    )
+  }
+
+  const existingInvite = await prisma.teamInvite.findFirst({
+    where: {
+      siteId: site.id,
+      email,
+      accepted: false,
+      expiresAt: { gt: new Date() },
+    },
+    select: { id: true },
+  })
+
+  if (existingInvite) {
+    return NextResponse.json(
+      { error: "A pending invite already exists for that email." },
+      { status: 409 }
+    )
+  }
+
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
   const invite = await prisma.teamInvite.create({
@@ -59,7 +94,7 @@ export async function POST(req: NextRequest) {
   })
 
   const appUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000"
-  const inviteUrl = `${appUrl}/auth/signin?invite=${encodeURIComponent(invite.token)}`
+  const inviteUrl = `${appUrl}/api/team/accept?token=${encodeURIComponent(invite.token)}`
 
   await sendEmail({
     to: email,

@@ -64,7 +64,7 @@ export default function LandingNav() {
           <Link href="/auth/signin" className="rw-btn rw-btn-secondary">
             Sign In
           </Link>
-          <Link href="/onboarding" className="rw-btn rw-btn-primary">
+          <Link href="/auth/signin" className="rw-btn rw-btn-primary">
             Start Free
           </Link>
         </div>
@@ -107,7 +107,7 @@ export default function LandingNav() {
                 <Link href="/auth/signin" className="rw-btn rw-btn-secondary justify-center" onClick={() => setMenuOpen(false)}>
                   Sign In
                 </Link>
-                <Link href="/onboarding" className="rw-btn rw-btn-primary justify-center" onClick={() => setMenuOpen(false)}>
+                <Link href="/auth/signin" className="rw-btn rw-btn-primary justify-center" onClick={() => setMenuOpen(false)}>
                   Start Free
                 </Link>
               </div>

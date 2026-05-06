@@ -187,7 +187,9 @@ export default function DomainVerification() {
 
   // ── Pending ───────────────────────────────────────────────────────────────
   if (state.status === "pending") {
-    const metaTag = `<meta name="relay-verify" content="${state.token}" />`
+    const txtName = `_relayweb-verify.${state.domain}`
+    const txtValue = state.token
+    const txtRecord = `${txtName} TXT ${txtValue}`
     return (
       <div className="space-y-4">
         <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
@@ -201,16 +203,24 @@ export default function DomainVerification() {
             </p>
           </div>
           <p className="mb-2 text-sm font-medium text-[var(--text-secondary)]">
-            Add this to your site&apos;s{" "}
-            <code className="rounded bg-[var(--bg-overlay)] px-1 text-xs">&lt;head&gt;</code>:
+            Add this TXT record in your DNS provider:
           </p>
-          <div className="flex items-start gap-2">
-            <code className="flex-1 break-all rounded border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--text-secondary)]">
-              {metaTag}
-            </code>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <div className="rounded border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Name</p>
+              <code className="break-all font-mono text-xs leading-relaxed text-[var(--text-secondary)]">
+                {txtName}
+              </code>
+            </div>
+            <div className="rounded border border-[var(--border-default)] bg-[var(--bg-surface)] px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Value</p>
+              <code className="break-all font-mono text-xs leading-relaxed text-[var(--text-secondary)]">
+                {txtValue}
+              </code>
+            </div>
             <button
-              onClick={() => handleCopy(metaTag)}
-              className="rw-btn rw-btn-secondary shrink-0 whitespace-nowrap px-3 py-2 text-xs"
+              onClick={() => handleCopy(txtRecord)}
+              className="rw-btn rw-btn-secondary h-fit shrink-0 whitespace-nowrap px-3 py-2 text-xs"
             >
               {copied ? "Copied!" : "Copy"}
             </button>
@@ -218,13 +228,9 @@ export default function DomainVerification() {
         </div>
 
         <ol className="list-inside list-decimal space-y-1 text-sm text-[var(--text-secondary)]">
-          <li>Copy the meta tag above</li>
-          <li>
-            Paste it inside the{" "}
-            <code className="rounded bg-[var(--bg-overlay)] px-1 text-xs">&lt;head&gt;</code> of your site&apos;s{" "}
-            <code className="rounded bg-[var(--bg-overlay)] px-1 text-xs">app/layout.tsx</code>
-          </li>
-          <li>Redeploy your site on Vercel</li>
+          <li>Copy the TXT record above</li>
+          <li>Add it to the DNS records for your domain</li>
+          <li>Wait for DNS propagation</li>
           <li>Click Verify Now below</li>
         </ol>
 

@@ -30,7 +30,11 @@ export default async function ComponentsPage() {
 
   if (!hasTier3Access(subscription?.stripePriceId)) {
     return (
-      <AnimatedPage className="rw-page-shell rw-page-shell--compact">
+      <AnimatedPage className="rw-page-shell rw-page-shell--compact space-y-8">
+        <PageHeader
+          title="Component Builder"
+          description="Generate components with AI, review them for safety, then assemble page layouts on a draggable canvas."
+        />
         <div className="rw-card border-dashed p-8 text-center">
           <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
           <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Component Builder Locked</h1>

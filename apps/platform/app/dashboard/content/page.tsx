@@ -29,10 +29,10 @@ export default async function ContentPage() {
     <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
       <PageHeader
         title="Content Editor"
-        description="Edit page copy and SEO fields, schedule changes, and restore prior versions without leaving the dashboard."
+        description="Edit page copy, schedule changes, and restore prior versions without leaving the dashboard."
       />
       <section className="rw-card p-6">
-        <ContentEditor siteId={site.id} />
+        <ContentEditor siteId={site.id} mode="content" />
       </section>
     </AnimatedPage>
   )

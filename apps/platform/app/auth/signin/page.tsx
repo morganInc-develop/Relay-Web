@@ -62,7 +62,10 @@ function SignInForm() {
   const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
 
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  const inviteToken = searchParams.get("invite");
+  const callbackUrl =
+    searchParams.get("callbackUrl") ??
+    (inviteToken ? `/invite/accept?token=${encodeURIComponent(inviteToken)}` : "/dashboard");
   const errorParam = searchParams.get("error");
 
   useEffect(() => {

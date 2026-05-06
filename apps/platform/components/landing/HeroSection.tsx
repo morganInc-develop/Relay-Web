@@ -79,7 +79,7 @@ export default function HeroSection() {
 
           <div ref={ctasRef} className="mt-8 flex flex-col gap-3 sm:flex-row">
             <motion.div whileHover={buttonHover} whileTap={buttonTap}>
-              <Link href="/onboarding" className="rw-btn rw-btn-primary h-12 px-7 text-sm">
+              <Link href="/auth/signin" className="rw-btn rw-btn-primary h-12 px-7 text-sm">
                 Start Free
                 <RiArrowRightLine className="h-4 w-4" />
               </Link>

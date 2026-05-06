@@ -26,7 +26,11 @@ export default async function TeamPage() {
 
   if (!site) {
     return (
-      <AnimatedPage className="rw-page-shell rw-page-shell--narrow">
+      <AnimatedPage className="rw-page-shell rw-page-shell--narrow space-y-8">
+        <PageHeader
+          title="Team"
+          description="Manage workspace members, track pending invites, and control ownership access for your site."
+        />
         <div className="rw-card border-dashed p-8 text-center">
           <RiTeamLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
           <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Team</h1>

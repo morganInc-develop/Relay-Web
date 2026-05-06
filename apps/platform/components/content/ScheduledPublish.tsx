@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { toast } from "sonner"
 
 interface ScheduledPublishProps {
   page: string
   field: string
   value: string
+  onScheduled?: () => void
 }
 
 type ScheduleState =
@@ -31,7 +33,7 @@ function toDatetimeLocal(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
-export default function ScheduledPublish({ page, field, value }: ScheduledPublishProps) {
+export default function ScheduledPublish({ page, field, value, onScheduled }: ScheduledPublishProps) {
   const [state, setState] = useState<ScheduleState>({ status: "idle" })
   const [pendingPublishAt, setPendingPublishAt] = useState("")
 
@@ -54,6 +56,7 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
 
     setPendingPublishAt(publishAt)
     setState({ status: "scheduling" })
+    const toastId = toast.loading("Scheduling change...")
 
     try {
       const response = await fetch("/api/content/schedule", {
@@ -74,11 +77,15 @@ export default function ScheduledPublish({ page, field, value }: ScheduledPublis
         publishAt: scheduledAt,
         id: typeof data.id === "string" ? data.id : "",
       })
+      toast.success("Change scheduled.", { id: toastId })
+      onScheduled?.()
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to schedule update"
       setState({
         status: "error",
-        message: error instanceof Error ? error.message : "Failed to schedule update",
+        message,
       })
+      toast.error(message, { id: toastId })
     }
   }
 

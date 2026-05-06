@@ -102,7 +102,7 @@ export default function PricingSection() {
 
                 <motion.div whileHover={buttonHover} whileTap={buttonTap} className="mt-8">
                   <Link
-                    href="/onboarding"
+                    href="/auth/signin"
                     className={`rw-btn w-full justify-center ${tier.featured ? "rw-btn-primary" : "rw-btn-secondary"}`}
                   >
                     {tier.cta}

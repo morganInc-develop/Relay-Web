@@ -1,12 +1,15 @@
 import { auth } from "@/lib/auth"
+import { hasTier3Access } from "@/lib/design-tier"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
-import { RiCheckboxCircleLine } from "react-icons/ri"
+import { RiCheckboxCircleLine, RiLockLine } from "react-icons/ri"
 
 import PageHeader from "@/components/dashboard/PageHeader"
 import AnimatedPage from "@/components/ui/AnimatedPage"
 import DomainVerification from "@/components/domain/DomainVerification"
 import SiteLinking from "@/components/site/SiteLinking"
+import ScriptManager from "@/components/site/ScriptManager"
+import WhitelabelSettings from "@/components/site/WhitelabelSettings"
 
 export default async function SitePage() {
   const session = await auth()
@@ -14,6 +17,7 @@ export default async function SitePage() {
 
   const subscription = await prisma.subscription.findUnique({
     where: { userId: session.user.id },
+    select: { status: true, tier: true, stripePriceId: true },
   })
   if (!subscription || subscription.status !== "ACTIVE") redirect("/onboarding")
 
@@ -31,8 +35,19 @@ export default async function SitePage() {
       vercelProjectId: true,
       r2Prefix: true,
       status: true,
+      whitelabelUrl: true,
     },
   })
+
+  const scripts = site
+    ? await prisma.scriptInjection.findMany({
+        where: { siteId: site.id },
+        orderBy: { createdAt: "desc" },
+      })
+    : []
+
+  const canUseAdvancedSiteControls =
+    subscription.tier === "TIER3" || hasTier3Access(subscription.stripePriceId)
 
   return (
     <AnimatedPage className="rw-page-shell rw-page-shell--compact space-y-10">
@@ -56,7 +71,7 @@ export default async function SitePage() {
           <div>
             <h2 className="font-semibold text-[var(--text-primary)]">Verify your domain</h2>
             <p className="text-sm text-[var(--text-secondary)]">
-              Prove you own the domain by adding a meta tag to your site
+              Prove you own the domain by adding a DNS TXT record
             </p>
           </div>
         </div>
@@ -135,6 +150,51 @@ export default async function SitePage() {
           </a>
         </div>
       )}
+
+      {site ? (
+        <section className="space-y-6">
+          <div>
+            <h2 className="text-xl font-bold text-[var(--text-primary)]">Site Controls</h2>
+            <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">
+              Manage Pro-level script injection and white-label dashboard access for this connected site.
+            </p>
+          </div>
+
+          {canUseAdvancedSiteControls ? (
+            <>
+              <div>
+                <h2 className="text-xl font-bold text-[var(--text-primary)]">Script Injection</h2>
+                <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                  Add approved scripts to your site&apos;s head or body without changing code.
+                </p>
+                <div className="mt-6">
+                  <ScriptManager initialScripts={scripts} />
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold text-[var(--text-primary)]">White-Label Dashboard URL</h2>
+                <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                  Host this dashboard under your own client-facing domain.
+                </p>
+                <div className="mt-6">
+                  <WhitelabelSettings initialUrl={site.whitelabelUrl} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rw-card border-dashed p-8 text-center">
+              <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
+              <h2 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">
+                Site Controls Locked
+              </h2>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Upgrade to Tier 3 (Pro) to unlock script injection and white-label dashboard controls.
+              </p>
+            </div>
+          )}
+        </section>
+      ) : null}
     </AnimatedPage>
   )
 }

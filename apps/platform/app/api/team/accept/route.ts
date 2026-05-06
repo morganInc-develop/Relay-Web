@@ -7,66 +7,42 @@ interface AcceptBody {
   token?: string;
 }
 
-export async function POST(req: NextRequest) {
-  // 1. Auth
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+function getAppUrl(req: NextRequest): string {
+  return process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? req.nextUrl.origin;
+}
 
-  // 2. Parse body
-  let body: AcceptBody;
-  try {
-    body = (await req.json()) as AcceptBody;
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
-  }
-
-  // 3. Validate token
-  const token = typeof body.token === "string" ? body.token.trim() : "";
-  if (!token) {
-    return NextResponse.json({ error: "Token is required" }, { status: 400 });
-  }
-
-  // 4. Look up invite
+async function acceptInvite(token: string, userId: string, userEmail?: string | null) {
   const invite = await prisma.teamInvite.findUnique({ where: { token } });
   if (!invite) {
-    return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    return { error: "Invite not found", status: 404 };
   }
 
-  // 5. Check accepted
   if (invite.accepted) {
-    return NextResponse.json({ error: "Invite already accepted" }, { status: 409 });
+    return { error: "Invite already accepted", status: 409 };
   }
 
-  // 6. Check expiry
   if (invite.expiresAt < new Date()) {
-    return NextResponse.json({ error: "Invite has expired" }, { status: 410 });
+    return { error: "Invite has expired", status: 410 };
   }
 
-  // 7. Check email match
-  const sessionEmail = session.user.email?.trim().toLowerCase() ?? "";
+  const sessionEmail = userEmail?.trim().toLowerCase() ?? "";
   const inviteEmail = invite.email.trim().toLowerCase();
   if (sessionEmail !== inviteEmail) {
-    return NextResponse.json(
-      { error: "This invite was sent to a different email address" },
-      { status: 403 }
-    );
+    return { error: "This invite was sent to a different email address", status: 403 };
   }
 
-  // 8. Transaction
   await prisma.$transaction([
     prisma.siteMember.upsert({
       where: {
         siteId_userId: {
           siteId: invite.siteId,
-          userId: session.user.id,
+          userId,
         },
       },
       update: {},
       create: {
         siteId: invite.siteId,
-        userId: session.user.id,
+        userId,
         role: invite.role,
       },
     }),
@@ -76,6 +52,59 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
-  // 9. Return
-  return NextResponse.json({ success: true, siteId: invite.siteId });
+  return { success: true, siteId: invite.siteId, status: 200 };
+}
+
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  const token = req.nextUrl.searchParams.get("token")?.trim() ?? "";
+
+  if (!token) {
+    return NextResponse.redirect(new URL("/auth/error?error=InviteTokenMissing", getAppUrl(req)));
+  }
+
+  if (!session?.user?.id) {
+    const callbackUrl = `/invite/accept?token=${encodeURIComponent(token)}`;
+    const signinUrl = new URL("/auth/signin", getAppUrl(req));
+    signinUrl.searchParams.set("callbackUrl", callbackUrl);
+    return NextResponse.redirect(signinUrl);
+  }
+
+  const result = await acceptInvite(token, session.user.id, session.user.email);
+  const redirectUrl = new URL("/dashboard/team", getAppUrl(req));
+
+  if ("success" in result) {
+    redirectUrl.searchParams.set("invite", "accepted");
+  } else {
+    redirectUrl.searchParams.set("invite", "error");
+    redirectUrl.searchParams.set("message", result.error);
+  }
+
+  return NextResponse.redirect(redirectUrl);
+}
+
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: AcceptBody;
+  try {
+    body = (await req.json()) as AcceptBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  if (!token) {
+    return NextResponse.json({ error: "Token is required" }, { status: 400 });
+  }
+
+  const result = await acceptInvite(token, session.user.id, session.user.email);
+  if (!("success" in result)) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  return NextResponse.json({ success: true, siteId: result.siteId });
 }

@@ -30,7 +30,11 @@ export default async function MediaPage() {
 
   if (!site) {
     return (
-      <AnimatedPage className="rw-page-shell rw-page-shell--compact">
+      <AnimatedPage className="rw-page-shell rw-page-shell--compact space-y-8">
+        <PageHeader
+          title="Media Library"
+          description="Upload and manage images and videos for your site."
+        />
         <div className="rw-card border-dashed p-8 text-center">
           <RiLockLine className="mx-auto mb-4 h-10 w-10 text-[var(--text-muted)]" />
           <h1 className="mb-2 text-2xl font-bold text-[var(--text-primary)]">Media Library</h1>

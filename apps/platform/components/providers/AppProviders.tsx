@@ -36,7 +36,7 @@ type AppProvidersProps = {
 export default function AppProviders({ children }: AppProvidersProps) {
   return (
     <SessionProvider>
-      <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem themes={["dark", "light"]}>
+      <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem themes={["dark", "light", "system"]}>
         {children}
         <AppToaster />
       </ThemeProvider>

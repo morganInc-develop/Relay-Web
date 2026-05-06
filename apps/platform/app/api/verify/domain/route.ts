@@ -3,9 +3,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { sendEmail } from "@/lib/email"
 import { domainVerifiedEmail } from "@/lib/email-templates"
-import { checkDomainForMetaTag, buildVerifyMetaTag, generateVerifyToken, normalizeDomain } from "@/lib/domain-verification"
+import { buildVerifyTxtRecord, checkDomainForTxtRecord, generateVerifyToken, normalizeDomain } from "@/lib/domain-verification"
 import { prisma } from "@/lib/prisma"
 import { checkRateLimit, rateLimiters } from "@/lib/rate-limit"
+
+export const runtime = "nodejs"
 
 const TOKEN_TTL_MS = 72 * 60 * 60 * 1000
 
@@ -103,7 +105,7 @@ export async function POST(req: NextRequest) {
       verified: false,
       domain: site.domain,
       token: refreshedToken,
-      metaTag: buildVerifyMetaTag(refreshedToken),
+      txtRecord: buildVerifyTxtRecord(site.domain ?? normalizedDomain, refreshedToken),
       expiresAt: refreshedExpiry.toISOString(),
       message:
         "Your previous verification token expired after 72 hours. A new token has been generated.",
@@ -120,17 +122,17 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const verifyResult = await checkDomainForMetaTag(normalizedDomain, site.verifyToken)
+  const verifyResult = await checkDomainForTxtRecord(normalizedDomain, site.verifyToken)
   if (!verifyResult.verified) {
     return NextResponse.json({
       verified: false,
       domain: normalizedDomain,
       token: site.verifyToken,
-      metaTag: buildVerifyMetaTag(site.verifyToken),
+      txtRecord: buildVerifyTxtRecord(normalizedDomain, site.verifyToken),
       expiresAt: site.verifyTokenExp?.toISOString() ?? nextTokenExpiry().toISOString(),
       message:
         verifyResult.error ??
-        "Verification tag not found. Add the tag to your site <head>, redeploy, and try again.",
+        "Verification TXT record not found. Add the TXT record in your DNS provider and try again.",
     })
   }
 

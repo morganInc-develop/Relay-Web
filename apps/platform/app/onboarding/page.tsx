@@ -99,7 +99,7 @@ export default async function OnboardingPage({
           <section className="rw-card-elevated p-6">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Step 2: Verify your domain</h2>
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              Add your verification meta tag, redeploy, then run the verification check.
+              Add your DNS TXT verification record, then run the verification check.
             </p>
             <div className="mt-5">
               <DomainVerification />

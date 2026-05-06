@@ -3,6 +3,7 @@ import { SubscriptionStatus } from "@prisma/client";
 import { redirect } from "next/navigation";
 
 import Sidebar from "@/components/dashboard/Sidebar";
+import MobileNav from "@/components/dashboard/MobileNav";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { RateLimitProvider } from "@/context/RateLimitContext";
@@ -39,7 +40,13 @@ export default async function DashboardLayout({ children }: Props) {
           userEmail={session.user.email ?? ""}
           userImage={session.user.image ?? null}
         />
-        <main className="min-h-screen px-4 py-6 md:ml-[240px] md:px-10 md:py-8">{children}</main>
+        <MobileNav
+          tier={subscription.tier}
+          userName={session.user.name ?? "RelayWeb User"}
+          userEmail={session.user.email ?? ""}
+          userImage={session.user.image ?? null}
+        />
+        <main className="min-h-screen px-4 pb-6 pt-24 md:ml-[240px] md:px-10 md:py-8">{children}</main>
       </div>
       <RateLimitToast />
     </RateLimitProvider>
