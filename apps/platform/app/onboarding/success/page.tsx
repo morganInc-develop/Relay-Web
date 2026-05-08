@@ -4,7 +4,7 @@ import { RiCheckboxCircleLine } from "react-icons/ri";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe";
+import { syncSubscriptionFromCheckoutSession } from "@/lib/stripe-subscription-sync";
 
 import SuccessClient from "./SuccessClient";
 
@@ -26,12 +26,15 @@ export default async function SuccessPage({
   const sessionId = params.session_id;
   if (!sessionId) redirect("/onboarding");
 
+  let checkoutSynced = false;
   try {
-    const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
-    if (checkoutSession.payment_status !== "paid") redirect("/onboarding");
+    const subscription = await syncSubscriptionFromCheckoutSession(sessionId, session.user.id);
+    checkoutSynced = Boolean(subscription);
   } catch {
     // Allow local verification and polling fallback when session lookup fails.
   }
+
+  if (!checkoutSynced) redirect("/onboarding");
 
   const subscription = await prisma.subscription.findUnique({
     where: { userId: session.user.id },

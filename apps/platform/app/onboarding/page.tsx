@@ -6,6 +6,7 @@ import SiteLinking from "@/components/site/SiteLinking"
 import StandaloneShell from "@/components/ui/StandaloneShell"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { syncSubscriptionFromCheckoutSession } from "@/lib/stripe-subscription-sync"
 
 const plans = [
   {
@@ -56,6 +57,14 @@ export default async function OnboardingPage({
   if (!session?.user?.id) redirect("/auth/signin")
 
   const params = await searchParams
+  if (params.session_id) {
+    try {
+      await syncSubscriptionFromCheckoutSession(params.session_id, session.user.id)
+    } catch (error) {
+      console.error("[onboarding] failed to sync checkout session", error)
+    }
+  }
+
   const subscription = await prisma.subscription.findUnique({
     where: { userId: session.user.id },
     select: { status: true },

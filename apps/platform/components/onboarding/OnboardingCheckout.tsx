@@ -32,7 +32,9 @@ export default function OnboardingCheckout({ plans, sessionId }: OnboardingCheck
       while (!cancelled && attempts < 30) {
         attempts += 1
         try {
-          const res = await fetch("/api/stripe/subscription", { cache: "no-store" })
+          const res = await fetch(`/api/stripe/subscription?session_id=${encodeURIComponent(sessionId)}`, {
+            cache: "no-store",
+          })
           const data = (await res.json()) as { subscription?: { status?: string } }
 
           if (res.ok && data.subscription?.status === "ACTIVE") {
